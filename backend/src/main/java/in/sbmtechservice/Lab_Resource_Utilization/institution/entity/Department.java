@@ -11,28 +11,33 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Table(name = "institutions")
+@Table(
+        name = "departments",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"institution_id", "code"})
+)
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
-public class Institution {
+public class Department {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 150)
+    // Owning side of the Many-to-One relationship with Institution
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "institution_id", nullable = false)
+    private Institution institution;
+
+    @Column(nullable = false, length = 150)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 100)
-    private String domain;
-
-    @Column(name = "contact_email", nullable = false, length = 255)
-    private String contactEmail;
+    @Column(nullable = false, length = 20)
+    private String code;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -42,8 +47,8 @@ public class Institution {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    // Inverse side of the One-to-Many relationship with Department
-    @OneToMany(mappedBy = "institution", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Inverse side of the One-to-Many relationship with the Associative Entity (UserDepartment)
+    @OneToMany(mappedBy = "department", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
-    private Set<Department> departments = new HashSet<>();
+    private Set<UserDepartment> userMemberships = new HashSet<>();
 }
