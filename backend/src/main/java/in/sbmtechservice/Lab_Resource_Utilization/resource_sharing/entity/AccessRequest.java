@@ -1,6 +1,6 @@
 package in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.entity;
 
-import in.sbmtechservice.Lab_Resource_Utilization.auth.entity.User;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.enums.AccessRequestStatus;
 import jakarta.persistence.*;
 import lombok.*;

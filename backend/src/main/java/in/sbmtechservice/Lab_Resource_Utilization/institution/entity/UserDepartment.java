@@ -1,6 +1,6 @@
 package in.sbmtechservice.Lab_Resource_Utilization.institution.entity;
 
-import in.sbmtechservice.Lab_Resource_Utilization.auth.entity.User;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 

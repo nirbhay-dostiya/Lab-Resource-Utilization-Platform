@@ -1,6 +1,6 @@
 package in.sbmtechservice.Lab_Resource_Utilization.notification.entity;
 
-import in.sbmtechservice.Lab_Resource_Utilization.auth.entity.User;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationChannel;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationReferenceType;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationStatus;

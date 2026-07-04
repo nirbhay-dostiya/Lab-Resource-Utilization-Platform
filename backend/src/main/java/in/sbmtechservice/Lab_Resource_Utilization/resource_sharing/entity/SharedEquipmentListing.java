@@ -1,6 +1,6 @@
 package in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.entity;
 
-import in.sbmtechservice.Lab_Resource_Utilization.inventory.entity.Equipment;
+import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.entity.Equipment;
 import jakarta.persistence.*;
 import lombok.*;
 
