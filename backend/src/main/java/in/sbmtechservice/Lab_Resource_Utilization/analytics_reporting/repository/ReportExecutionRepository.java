@@ -2,6 +2,7 @@ package in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.repositor
 
 import in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.entity.ReportExecution;
 import in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.enums.ExecutionStatus;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,7 +18,7 @@ public interface ReportExecutionRepository extends JpaRepository<ReportExecution
     Page<ReportExecution> findBySavedReportIdOrderByExecutionTimeDesc(UUID savedReportId, Pageable pageable);
 
     // Fetch the recent report generations triggered by a specific user
-    Page<ReportExecution> findByExecutedByOrderByExecutionTimeDesc(UUID userId, Pageable pageable);
+    Page<ReportExecution> findByExecutedByOrderByExecutionTimeDesc(User executedBy, Pageable pageable);
 
     // Find report generations that failed or are currently processing (Useful for admin health checks)
     List<ReportExecution> findByStatus(ExecutionStatus status);
