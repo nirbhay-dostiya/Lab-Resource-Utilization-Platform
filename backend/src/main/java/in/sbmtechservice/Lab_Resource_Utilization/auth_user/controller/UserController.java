@@ -16,7 +16,7 @@ public class UserController {
 
     // Only Admins should be allowed to assign roles to other people!
     @PostMapping("/assign-role")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
     public ResponseEntity<String> assignRole(@RequestBody RoleAssignmentRequest request) {
         String result = userService.assignRoleToUser(request.getUserId(), request.getNewRole());
         return ResponseEntity.ok(result);
