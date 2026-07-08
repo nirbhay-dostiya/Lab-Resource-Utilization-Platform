@@ -1,0 +1,38 @@
+package in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository;
+
+import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.entity.Equipment;
+import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.enums.EquipmentStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface EquipmentRepository extends JpaRepository<Equipment, UUID> {
+
+    // Serial numbers are unique, so returning Optional is perfect here
+    Optional<Equipment> findBySerialNumber(String serialNumber);
+
+    // Check for duplicate serial numbers during registration
+    boolean existsBySerialNumber(String serialNumber);
+
+    // Fetch all equipment belonging to a specific department
+    List<Equipment> findByDepartmentId(UUID departmentId);
+
+    // Fetch all equipment belonging to a specific category
+    List<Equipment> findByCategoryId(UUID categoryId);
+
+    // Fetch equipment based on its current operational status (e.g., finding all 'AVAILABLE' equipment)
+    List<Equipment> findByStatus(EquipmentStatus status);
+
+    // Search for equipment by name (case-insensitive for better UX)
+    List<Equipment> findByNameContainingIgnoreCase(String name);
+
+    // Custom query to fetch equipment with its associated tags initialized to prevent LazyInitializationException
+    @Query("SELECT e FROM Equipment e LEFT JOIN FETCH e.tags WHERE e.id = :id")
+    Optional<Equipment> findByIdWithTags(@Param("id") UUID id);
+}
