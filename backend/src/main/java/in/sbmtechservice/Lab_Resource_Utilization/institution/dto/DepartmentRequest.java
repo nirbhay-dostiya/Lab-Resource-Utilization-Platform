@@ -8,4 +8,8 @@ public class DepartmentRequest {
     private String name;
     private String description;
     private UUID institutionId;
+    private String code;
+    private String domain;
+    private String address;
+
 }

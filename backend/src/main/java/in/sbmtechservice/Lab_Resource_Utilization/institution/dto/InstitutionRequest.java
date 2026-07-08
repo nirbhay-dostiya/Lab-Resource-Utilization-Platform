@@ -6,6 +6,7 @@ import lombok.Data;
 public class InstitutionRequest {
     private String name;
     private String address;
+    private String domain;
     private String contactEmail;
     private String contactPhone;
 }

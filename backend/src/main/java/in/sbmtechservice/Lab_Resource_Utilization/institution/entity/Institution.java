@@ -34,6 +34,16 @@ public class Institution {
     @Column(name = "contact_email", nullable = false, length = 255)
     private String contactEmail;
 
+    @Column(length = 500)
+    private String address;
+
+    @Column(name = "contact_phone", length = 20)
+    private String contactPhone;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private Boolean isActive = true;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

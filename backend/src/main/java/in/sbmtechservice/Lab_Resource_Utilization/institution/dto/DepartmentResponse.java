@@ -10,6 +10,7 @@ public class DepartmentResponse {
     private UUID id;
     private String name;
     private String description;
+    private String code;
     private UUID institutionId;
     private String institutionName;
 }

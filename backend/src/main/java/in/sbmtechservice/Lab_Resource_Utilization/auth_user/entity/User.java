@@ -46,6 +46,10 @@ public class User {
     @Column(name = "oauth_provider", length = 50)
     private String oauthProvider;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department department;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
