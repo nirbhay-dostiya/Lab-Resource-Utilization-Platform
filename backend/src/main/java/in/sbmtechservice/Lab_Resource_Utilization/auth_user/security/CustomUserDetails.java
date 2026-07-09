@@ -16,7 +16,8 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        // Convert your Role entities into Spring Security SimpleGrantedAuthorities
+
+        // change Role entities into Spring Security SimpleGrantedAuthorities
         return user.getRoles().stream()
                 .map(role -> new SimpleGrantedAuthority(role.getName().name()))
                 .collect(Collectors.toList());
@@ -46,7 +47,7 @@ public class CustomUserDetails implements UserDetails {
         return user.getIsActive();
     }
 
-    // Helper to get the actual user entity if needed in controllers
+    // for helper to the controllers
     public User getUser() {
         return user;
     }

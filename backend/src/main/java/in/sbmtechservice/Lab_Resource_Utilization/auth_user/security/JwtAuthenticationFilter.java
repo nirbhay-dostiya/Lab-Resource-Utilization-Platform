@@ -33,21 +33,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String jwt;
         final String userEmail;
 
-        // 1. Check for the Bearer token
+        // Check for the Bearer token
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 2. Extract Token and Username
+        // for getting token and username
         jwt = authHeader.substring(7);
         userEmail = jwtService.extractUsername(jwt);
 
-        // 3. If username exists and user isn't already authenticated
+        // check when username is exist or not also check authentication
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
 
-            // 4. Validate Token
+            // varify the token
             if (jwtService.isTokenValid(jwt, userDetails)) {
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
@@ -56,7 +56,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                // 5. Update Security Context
+                //  Update Security Context
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
         }
