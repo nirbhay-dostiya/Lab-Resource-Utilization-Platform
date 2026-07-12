@@ -7,4 +7,5 @@ public enum RoleType {
     DEPT_HEAD,
     INSTITUTION_ADMIN,
     SYSTEM_ADMIN
+
 }
