@@ -35,8 +35,14 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.getMyBookings(principal.getName()));
     }
 
+    @GetMapping("/all")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN') or hasAuthority('DEPT_HEAD')")
+    public ResponseEntity<List<BookingResponse>> getAllBookings(Principal principal) {
+        return ResponseEntity.ok(bookingService.getAllBookings(principal.getName()));
+    }
+
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
     public ResponseEntity<BookingResponse> updateStatus(
             @PathVariable UUID id,
             @RequestParam BookingStatus status

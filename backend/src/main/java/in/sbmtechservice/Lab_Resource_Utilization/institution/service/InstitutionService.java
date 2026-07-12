@@ -46,20 +46,10 @@ public class InstitutionService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        boolean isSystemAdmin = user.getRoles().stream()
-                .anyMatch(role -> role.getName() == RoleType.SYSTEM_ADMIN);
-
-        if (isSystemAdmin) {
-            return institutionRepository.findAll().stream()
-                    .map(this::mapToResponse)
-                    .collect(Collectors.toList());
-        }
-
-        if (user.getDepartment() != null && user.getDepartment().getInstitution() != null) {
-            return Collections.singletonList(mapToResponse(user.getDepartment().getInstitution()));
-        }
-
-        return Collections.emptyList();
+        // Allow all authenticated users to see the list of institutions for filtering and booking
+        return institutionRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     private InstitutionResponse mapToResponse(Institution institution) {

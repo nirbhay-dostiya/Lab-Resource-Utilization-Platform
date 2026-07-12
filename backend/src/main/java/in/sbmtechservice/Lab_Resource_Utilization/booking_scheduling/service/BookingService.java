@@ -92,6 +92,34 @@ public class BookingService {
                 .collect(Collectors.toList());
     }
 
+    public List<BookingResponse> getAllBookings(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found."));
+        
+        boolean isSystemAdmin = user.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.SYSTEM_ADMIN);
+        boolean isInstAdmin = user.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.INSTITUTION_ADMIN);
+        boolean isDeptHead = user.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.DEPT_HEAD);
+
+        List<Booking> bookings;
+
+        if (isSystemAdmin) {
+            bookings = bookingRepository.findAll();
+        } else if (isInstAdmin) {
+            UUID instId = user.getInstitution() != null ? user.getInstitution().getId() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getId() : null);
+            if (instId == null) throw new SecurityException("Institution Admin is not associated with an institution.");
+            bookings = bookingRepository.findByEquipmentDepartmentInstitutionId(instId);
+        } else if (isDeptHead) {
+            if (user.getDepartment() == null) throw new SecurityException("Department Head is not associated with a department.");
+            bookings = bookingRepository.findByEquipmentDepartmentId(user.getDepartment().getId());
+        } else {
+            throw new SecurityException("You do not have permission to view all bookings.");
+        }
+
+        return bookings.stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
     private BookingResponse mapToResponse(Booking booking) {
         return BookingResponse.builder()
                 .id(booking.getId())

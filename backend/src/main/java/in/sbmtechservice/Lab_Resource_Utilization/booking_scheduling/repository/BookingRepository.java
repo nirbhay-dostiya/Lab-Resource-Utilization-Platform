@@ -23,6 +23,14 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Find all bookings with a specific status (e.g., to clean up 'NO_SHOW's)
     List<Booking> findByStatus(BookingStatus status);
 
+    // Fetch bookings by Institution
+    @Query("SELECT b FROM Booking b WHERE b.equipment.department.institution.id = :institutionId")
+    List<Booking> findByEquipmentDepartmentInstitutionId(@Param("institutionId") UUID institutionId);
+
+    // Fetch bookings by Department
+    @Query("SELECT b FROM Booking b WHERE b.equipment.department.id = :departmentId")
+    List<Booking> findByEquipmentDepartmentId(@Param("departmentId") UUID departmentId);
+
     // 🚨 CORE SCHEDULING LOGIC: Check for overlapping bookings to prevent double-booking 🚨
     @Query("SELECT b FROM Booking b WHERE b.equipment.id = :equipmentId " +
             "AND b.status IN ('CONFIRMED', 'IN_USE') " +

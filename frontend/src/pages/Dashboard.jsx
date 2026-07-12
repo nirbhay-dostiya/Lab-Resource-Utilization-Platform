@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 import api from '../api/axios';
 
 const Dashboard = () => {
@@ -20,9 +20,16 @@ const Dashboard = () => {
   
   const [selectedInstitution, setSelectedInstitution] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [hasInitializedInst, setHasInitializedInst] = useState(false);
   
   // Form visibility state
-  const [activeSection, setActiveSection] = useState('institutions'); // institutions, users, departments, categories, equipment
+  const [activeSection, setActiveSection] = useState('bookings'); // bookings, institutions, users, departments, categories, equipment
+
+  // Booking State
+  const [bookingsList, setBookingsList] = useState([]);
+  const [isFetchingBookings, setIsFetchingBookings] = useState(false);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingData, setBookingData] = useState({ equipmentId: '', equipmentName: '', startTime: '', endTime: '', purpose: '' });
   
   // Add Institution Form State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -47,11 +54,12 @@ const Dashboard = () => {
   }, [isSystemAdmin, user]);
 
   useEffect(() => {
-    if (user && !isSystemAdmin && user.institutionId && !selectedInstitution) {
+    if (user && !isSystemAdmin && user.institutionId && !hasInitializedInst) {
       setSelectedInstitution(user.institutionId);
       fetchDepartments(user.institutionId);
+      setHasInitializedInst(true);
     }
-  }, [user, isSystemAdmin, selectedInstitution]);
+  }, [user, isSystemAdmin, hasInitializedInst]);
 
   useEffect(() => {
     if (activeSection === 'equipment') {
@@ -63,9 +71,25 @@ const Dashboard = () => {
         fetchEquipment('global');
       }
     }
+    if (activeSection === 'bookings') {
+      fetchBookings();
+    }
   }, [activeSection]);
 
   const hasRole = (roleName) => user?.roles?.includes(roleName) || user?.authorities?.includes(roleName) || user?.authorities?.some(auth => auth.authority === roleName);
+
+  const fetchBookings = async () => {
+    setIsFetchingBookings(true);
+    try {
+      const endpoint = (isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD')) ? '/bookings/all' : '/bookings/my-bookings';
+      const res = await api.get(endpoint);
+      setBookingsList(res.data);
+    } catch (err) {
+      console.error("Failed to fetch bookings", err);
+    } finally {
+      setIsFetchingBookings(false);
+    }
+  };
 
   const fetchCategories = async () => {
     try {
@@ -254,6 +278,32 @@ const Dashboard = () => {
     }
   };
 
+  const handleCreateBooking = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/bookings', {
+        equipmentId: bookingData.equipmentId,
+        startTime: bookingData.startTime,
+        endTime: bookingData.endTime,
+        purpose: bookingData.purpose
+      });
+      alert("Booking request submitted successfully!");
+      setShowBookingModal(false);
+      if (activeSection === 'bookings') fetchBookings();
+    } catch (err) {
+      alert("Failed to submit booking: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleUpdateBookingStatus = async (bookingId, newStatus) => {
+    try {
+      await api.patch(`/bookings/${bookingId}/status?status=${newStatus}`);
+      fetchBookings();
+    } catch (err) {
+      alert("Failed to update booking status: " + (err.response?.data?.message || err.message));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
       {/* Top Navigation */}
@@ -321,21 +371,82 @@ const Dashboard = () => {
             </div>
         </section>
 
-        {/* Admin Navigation Tabs */}
-        {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD')) && (
-          <div className="flex flex-wrap gap-2 mb-2 bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
-            {isSystemAdmin && (
-              <>
-                <button onClick={() => setActiveSection('institutions')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'institutions' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Building size={16} /> Institutions</button>
-                <button onClick={() => setActiveSection('users')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'users' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><User size={16} /> Users</button>
-              </>
-            )}
-            {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD')) && (
+        {/* Navigation Tabs */}
+        <div className="flex flex-wrap gap-2 mb-2 bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
+          <button onClick={() => setActiveSection('bookings')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'bookings' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Calendar size={16} /> Bookings</button>
+          
+          {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD')) && (
+            <>
+              {isSystemAdmin && (
+                <>
+                  <button onClick={() => setActiveSection('institutions')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'institutions' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Building size={16} /> Institutions</button>
+                  <button onClick={() => setActiveSection('users')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'users' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><User size={16} /> Users</button>
+                </>
+              )}
               <button onClick={() => setActiveSection('categories')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'categories' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Tags size={16} /> Categories</button>
+              <button onClick={() => setActiveSection('departments')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'departments' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Network size={16} /> Departments</button>
+              <button onClick={() => setActiveSection('equipment')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'equipment' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Settings size={16} /> Equipment</button>
+            </>
+          )}
+        </div>
+
+        {/* Bookings Section */}
+        {activeSection === 'bookings' && (
+          <section className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 animate-fade-in flex flex-col gap-8">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-medium flex items-center gap-2"><Calendar size={24} className="text-brand-orange" /> {isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') ? 'All Bookings' : 'My Bookings'}</h2>
+              {!isSystemAdmin && (
+                <button onClick={() => setActiveSection('equipment')} className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-2">
+                  <Plus size={16} /> New Booking
+                </button>
+              )}
+            </div>
+            
+            {isFetchingBookings ? (
+              <div className="flex justify-center p-8"><Loader2 size={32} className="animate-spin text-brand-orange" /></div>
+            ) : bookingsList.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead><tr className="border-b border-gray-200"><th className="py-3 px-4 text-sm font-medium text-gray-500">Equipment</th><th className="py-3 px-4 text-sm font-medium text-gray-500">User</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Time</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Purpose</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Status</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Actions</th></tr></thead>
+                  <tbody>
+                    {bookingsList.map(b => (
+                      <tr key={b.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4 font-medium text-gray-800">{b.equipmentName}</td>
+                        <td className="py-3 px-4 text-gray-600 text-sm">{b.userName}</td>
+                        <td className="py-3 px-4 text-gray-600 text-sm">
+                          {new Date(b.startTime).toLocaleString()} <br/>to<br/> {new Date(b.endTime).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-gray-600 text-sm">{b.purpose}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${b.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : b.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-700' : b.status === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{b.status}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD')) ? (
+                            <select 
+                              className="border border-gray-300 rounded px-2 py-1 text-sm bg-white" 
+                              value={b.status} 
+                              onChange={(e) => handleUpdateBookingStatus(b.id, e.target.value)}
+                            >
+                              <option value="PENDING_APPROVAL">Pending</option>
+                              <option value="CONFIRMED">Confirmed</option>
+                              <option value="IN_USE">In Use</option>
+                              <option value="COMPLETED">Completed</option>
+                              <option value="CANCELLED">Cancelled</option>
+                              <option value="NO_SHOW">No Show</option>
+                            </select>
+                          ) : (
+                            <span className="text-gray-400 text-sm">View Only</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center p-8 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500">No bookings found.</div>
             )}
-            <button onClick={() => setActiveSection('departments')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'departments' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Network size={16} /> Departments</button>
-            <button onClick={() => setActiveSection('equipment')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeSection === 'equipment' ? 'bg-brand-orange text-white' : 'text-gray-600 hover:bg-gray-100'}`}><Settings size={16} /> Equipment</button>
-          </div>
+          </section>
         )}
 
         {/* 1. Institutions Section */}
@@ -625,45 +736,139 @@ const Dashboard = () => {
                 </select>
               </div>
 
-              {equipmentList.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead><tr className="border-b border-gray-200"><th className="py-3 px-4 text-sm font-medium text-gray-500">Name & Details</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Institution</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Category</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Status</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Update Status</th></tr></thead>
-                    <tbody>
-                      {equipmentList.map(eq => (
-                        <tr key={eq.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-3 px-4"><div className="font-medium text-gray-800">{eq.name}</div><div className="text-xs text-gray-500">SN: {eq.serialNumber} | Mfr: {eq.manufacturer}</div></td>
-                          <td className="py-3 px-4 text-gray-600 text-sm">{eq.institutionName}<br/><span className="text-xs text-gray-400">{eq.departmentName}</span></td>
-                          <td className="py-3 px-4 text-gray-600 text-sm">{eq.categoryName}</td>
-                          <td className="py-3 px-4"><span className={`px-2 py-1 rounded text-xs font-medium ${eq.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' : eq.status === 'BOOKED' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{eq.status}</span></td>
-                          <td className="py-3 px-4">
-                            <select 
-                              className="border border-gray-300 rounded px-2 py-1 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-400" 
-                              value={eq.status} 
-                              onChange={(e) => handleUpdateEquipmentStatus(eq.id, e.target.value)}
-                              disabled={!isSystemAdmin && eq.institutionId !== user?.institutionId}
-                            >
-                              <option value="AVAILABLE">Available</option>
-                              <option value="BOOKED">Booked</option>
-                              <option value="UNDER_MAINTENANCE">Maintenance</option>
-                              <option value="OUT_OF_SERVICE">Out of Service</option>
-                              <option value="RETIRED">Retired</option>
-                              <option value="BROKEN">Broken</option>
-                            </select>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center p-8 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500">No equipment found based on filters.</div>
-              )}
+              {(() => {
+                const renderTable = (items) => (
+                  items.length > 0 ? (
+                    <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                      <table className="w-full text-left border-collapse bg-white">
+                        <thead><tr className="border-b border-gray-200 bg-gray-50"><th className="py-3 px-4 text-sm font-medium text-gray-500">Name & Details</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Institution</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Category</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Status</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Update Status</th><th className="py-3 px-4 text-sm font-medium text-gray-500">Actions</th></tr></thead>
+                        <tbody>
+                          {items.map(eq => (
+                            <tr key={eq.id} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-3 px-4"><div className="font-medium text-gray-800">{eq.name}</div><div className="text-xs text-gray-500">SN: {eq.serialNumber} | Mfr: {eq.manufacturer}</div></td>
+                              <td className="py-3 px-4 text-gray-600 text-sm">{eq.institutionName}<br/><span className="text-xs text-gray-400">{eq.departmentName}</span></td>
+                              <td className="py-3 px-4 text-gray-600 text-sm">{eq.categoryName}</td>
+                              <td className="py-3 px-4"><span className={`px-2 py-1 rounded text-xs font-medium ${eq.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' : eq.status === 'BOOKED' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{eq.status}</span></td>
+                              <td className="py-3 px-4">
+                                <select 
+                                  className="border border-gray-300 rounded px-2 py-1 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-400" 
+                                  value={eq.status} 
+                                  onChange={(e) => handleUpdateEquipmentStatus(eq.id, e.target.value)}
+                                  disabled={!isSystemAdmin && eq.institutionId !== user?.institutionId}
+                                >
+                                  <option value="AVAILABLE">Available</option>
+                                  <option value="BOOKED">Booked</option>
+                                  <option value="UNDER_MAINTENANCE">Maintenance</option>
+                                  <option value="OUT_OF_SERVICE">Out of Service</option>
+                                  <option value="RETIRED">Retired</option>
+                                  <option value="BROKEN">Broken</option>
+                                </select>
+                              </td>
+                              <td className="py-3 px-4">
+                                {eq.status === 'AVAILABLE' && !isSystemAdmin && !(hasRole('INSTITUTION_ADMIN') && eq.institutionId === user?.institutionId) && (
+                                  <button 
+                                    onClick={() => { setBookingData({ ...bookingData, equipmentId: eq.id, equipmentName: eq.name }); setShowBookingModal(true); }}
+                                    className="bg-brand-orange hover:bg-orange-600 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+                                  >
+                                    Book
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center p-8 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500">No equipment found.</div>
+                  )
+                );
+
+                if (!isSystemAdmin && !selectedInstitution) {
+                  const myEquipment = equipmentList.filter(eq => eq.institutionId === user?.institutionId);
+                  const otherEquipment = equipmentList.filter(eq => eq.institutionId !== user?.institutionId);
+                  
+                  return (
+                    <div className="flex flex-col gap-8">
+                      <div>
+                        <h4 className="font-semibold text-lg text-gray-700 mb-3">My Institute Equipment</h4>
+                        {renderTable(myEquipment)}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-lg text-gray-700 mb-3">Other Institutes' Equipment</h4>
+                        {renderTable(otherEquipment)}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return renderTable(equipmentList);
+              })()}
             </div>
           </section>
         )}
 
       </main>
+
+      {/* Booking Modal */}
+      {showBookingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
+            <h3 className="text-xl font-medium mb-2">Book Equipment</h3>
+            <p className="text-gray-500 text-sm mb-6">You are booking: <span className="font-medium text-gray-800">{bookingData.equipmentName}</span></p>
+            
+            <form onSubmit={handleCreateBooking} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                <input 
+                  type="datetime-local" 
+                  required 
+                  className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
+                  value={bookingData.startTime}
+                  onChange={(e) => setBookingData({...bookingData, startTime: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                <input 
+                  type="datetime-local" 
+                  required 
+                  className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
+                  value={bookingData.endTime}
+                  onChange={(e) => setBookingData({...bookingData, endTime: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
+                <textarea 
+                  required 
+                  placeholder="Why do you need this equipment?"
+                  className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
+                  rows="3"
+                  value={bookingData.purpose}
+                  onChange={(e) => setBookingData({...bookingData, purpose: e.target.value})}
+                ></textarea>
+              </div>
+              
+              <div className="flex justify-end gap-3 mt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowBookingModal(false)}
+                  className="px-5 py-2.5 rounded-full text-gray-600 hover:bg-gray-100 font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="bg-brand-orange hover:bg-orange-600 text-white px-5 py-2.5 rounded-full font-medium transition-colors"
+                >
+                  Confirm Booking
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
