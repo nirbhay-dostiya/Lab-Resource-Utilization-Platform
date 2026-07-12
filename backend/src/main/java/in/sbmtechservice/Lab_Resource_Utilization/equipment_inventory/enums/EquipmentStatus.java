@@ -5,5 +5,7 @@ public enum EquipmentStatus {
     BOOKED,
     UNDER_MAINTENANCE,
     OUT_OF_SERVICE,
-    RETIRED
+    RETIRED,
+    BROKEN,
+
 }
