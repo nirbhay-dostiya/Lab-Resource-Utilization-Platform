@@ -26,4 +26,14 @@ public class CategoryService {
                 .description(saved.getDescription())
                 .build();
     }
+
+    public java.util.List<CategoryResponse> getAllCategories() {
+        return categoryRepository.findAll().stream()
+                .map(cat -> CategoryResponse.builder()
+                        .id(cat.getId())
+                        .name(cat.getName())
+                        .description(cat.getDescription())
+                        .build())
+                .toList();
+    }
 }

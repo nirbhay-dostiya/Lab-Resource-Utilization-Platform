@@ -18,7 +18,17 @@ public class UserController {
     @PostMapping("/assign-role")
     @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
     public ResponseEntity<String> assignRole(@RequestBody RoleAssignmentRequest request) {
-        String result = userService.assignRoleToUser(request.getUserId(), request.getNewRole());
+        String result = userService.assignRoleToUser(request.getUserId(), request.getNewRole(), request.getInstitutionId());
+        return ResponseEntity.ok(result);
+    }
+
+    @DeleteMapping("/{userId}/roles/{role}")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<String> removeRole(
+            @PathVariable java.util.UUID userId,
+            @PathVariable in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType role
+    ) {
+        String result = userService.removeRoleFromUser(userId, role);
         return ResponseEntity.ok(result);
     }
 

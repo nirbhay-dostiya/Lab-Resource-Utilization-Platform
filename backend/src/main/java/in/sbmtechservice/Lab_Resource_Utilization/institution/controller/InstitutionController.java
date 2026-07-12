@@ -25,7 +25,7 @@ public class InstitutionController {
 
     @GetMapping
     @PreAuthorize("isAuthenticated()") // Anyone logged in can view the list of institutions
-    public ResponseEntity<List<InstitutionResponse>> getAllInstitutions() {
-        return ResponseEntity.ok(institutionService.getAllInstitutions());
+    public ResponseEntity<List<InstitutionResponse>> getAllInstitutions(java.security.Principal principal) {
+        return ResponseEntity.ok(institutionService.getAllInstitutions(principal.getName()));
     }
 }

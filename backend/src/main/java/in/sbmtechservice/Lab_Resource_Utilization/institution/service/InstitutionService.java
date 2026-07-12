@@ -1,5 +1,8 @@
 package in.sbmtechservice.Lab_Resource_Utilization.institution.service;
 
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.dto.InstitutionRequest;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.dto.InstitutionResponse;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution;
@@ -8,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -17,6 +21,7 @@ import java.util.stream.Collectors;
 public class InstitutionService {
 
     private final InstitutionRepository institutionRepository;
+    private final UserRepository userRepository;
 
     @Transactional
     public InstitutionResponse createInstitution(InstitutionRequest request) {
@@ -37,10 +42,24 @@ public class InstitutionService {
         return mapToResponse(saved);
     }
 
-    public List<InstitutionResponse> getAllInstitutions() {
-        return institutionRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+    public List<InstitutionResponse> getAllInstitutions(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        boolean isSystemAdmin = user.getRoles().stream()
+                .anyMatch(role -> role.getName() == RoleType.SYSTEM_ADMIN);
+
+        if (isSystemAdmin) {
+            return institutionRepository.findAll().stream()
+                    .map(this::mapToResponse)
+                    .collect(Collectors.toList());
+        }
+
+        if (user.getDepartment() != null && user.getDepartment().getInstitution() != null) {
+            return Collections.singletonList(mapToResponse(user.getDepartment().getInstitution()));
+        }
+
+        return Collections.emptyList();
     }
 
     private InstitutionResponse mapToResponse(Institution institution) {

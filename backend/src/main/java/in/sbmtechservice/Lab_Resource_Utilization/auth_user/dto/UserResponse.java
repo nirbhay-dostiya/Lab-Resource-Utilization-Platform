@@ -15,4 +15,8 @@ public class UserResponse {
     private String lastName;
     private Boolean isActive;
     private List<String> roles;
+    private UUID institutionId;
+    private String institutionName;
+    private UUID departmentId;
+    private String departmentName;
 }

@@ -50,6 +50,10 @@ public class User {
     @JoinColumn(name = "department_id")
     private in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department department;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "institution_id")
+    private in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution institution;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

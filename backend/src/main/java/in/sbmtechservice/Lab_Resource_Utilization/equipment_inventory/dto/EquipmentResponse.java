@@ -28,4 +28,6 @@ public class EquipmentResponse {
     private String categoryName;
 
     private Set<String> tags;
+    private UUID institutionId;
+    private String institutionName;
 }

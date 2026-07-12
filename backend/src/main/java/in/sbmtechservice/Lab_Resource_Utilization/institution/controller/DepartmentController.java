@@ -21,8 +21,8 @@ public class DepartmentController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN')")
-    public ResponseEntity<DepartmentResponse> createDepartment(@RequestBody DepartmentRequest request) {
-        return ResponseEntity.ok(departmentService.createDepartment(request));
+    public ResponseEntity<DepartmentResponse> createDepartment(@RequestBody DepartmentRequest request, java.security.Principal principal) {
+        return ResponseEntity.ok(departmentService.createDepartment(request, principal.getName()));
     }
 
     @GetMapping("/institution/{institutionId}")
@@ -32,9 +32,15 @@ public class DepartmentController {
     }
 
     @PostMapping("/assign-user")
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN') or hasAuthority('DEPT_HEAD')")
-    public ResponseEntity<String> assignUserToDepartment(@RequestBody AssignDepartmentRequest request) {
-        String response = departmentService.assignUserToDepartment(request.getUserId(), request.getDepartmentId());
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<String> assignUserToDepartment(@RequestBody AssignDepartmentRequest request, java.security.Principal principal) {
+        String response = departmentService.assignUserToDepartment(request.getUserId(), request.getDepartmentId(), principal.getName());
         return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN')")
+    public ResponseEntity<DepartmentResponse> updateDepartment(@PathVariable UUID id, @RequestBody DepartmentRequest request, java.security.Principal principal) {
+        return ResponseEntity.ok(departmentService.updateDepartment(id, request, principal.getName()));
     }
 }

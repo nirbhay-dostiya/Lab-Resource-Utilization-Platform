@@ -8,4 +8,5 @@ import java.util.UUID;
 public class RoleAssignmentRequest {
     private UUID userId;
     private RoleType newRole;
+    private UUID institutionId;
 }

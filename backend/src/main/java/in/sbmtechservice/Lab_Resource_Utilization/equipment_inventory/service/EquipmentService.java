@@ -41,8 +41,11 @@ public class EquipmentService {
                 .anyMatch(role -> role.getName().name().equals("SYSTEM_ADMIN"));
 
         if (!isSystemAdmin) {
-            if (currentUser.getDepartment() == null || !currentUser.getDepartment().getId().equals(request.getDepartmentId())) {
-                throw new SecurityException("You can only add equipment to your own department.");
+            Department requestDepartment = departmentRepository.findById(request.getDepartmentId())
+                    .orElseThrow(() -> new IllegalArgumentException("Department not found."));
+            UUID userInstId = currentUser.getInstitution() != null ? currentUser.getInstitution().getId() : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null ? currentUser.getDepartment().getInstitution().getId() : null);
+            if (userInstId == null || !userInstId.equals(requestDepartment.getInstitution().getId())) {
+                throw new SecurityException("You can only add equipment to your own institution.");
             }
         }
 
@@ -86,11 +89,37 @@ public class EquipmentService {
                 .collect(Collectors.toList());
     }
 
+    public List<EquipmentResponse> getEquipmentByInstitution(UUID institutionId) {
+        return equipmentRepository.findAll().stream()
+                .filter(e -> e.getDepartment() != null && e.getDepartment().getInstitution() != null && e.getDepartment().getInstitution().getId().equals(institutionId))
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<EquipmentResponse> getAllEquipment() {
+        return equipmentRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
     // 🚨 RESTORED METHOD: Controller needs this to update status 🚨
     @Transactional
-    public EquipmentResponse updateEquipmentStatus(UUID equipmentId, EquipmentStatus newStatus) {
+    public EquipmentResponse updateEquipmentStatus(UUID equipmentId, EquipmentStatus newStatus, String currentUserEmail) {
+        User currentUser = userRepository.findByEmail(currentUserEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        boolean isSystemAdmin = currentUser.getRoles().stream()
+                .anyMatch(role -> role.getName().name().equals("SYSTEM_ADMIN"));
+
         Equipment equipment = equipmentRepository.findById(equipmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
+
+        if (!isSystemAdmin) {
+            UUID userInstId = currentUser.getInstitution() != null ? currentUser.getInstitution().getId() : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null ? currentUser.getDepartment().getInstitution().getId() : null);
+            if (userInstId == null || !userInstId.equals(equipment.getDepartment().getInstitution().getId())) {
+                throw new SecurityException("You can only update equipment status in your own institution.");
+            }
+        }
 
         equipment.setStatus(newStatus);
         Equipment saved = equipmentRepository.save(equipment);
@@ -116,6 +145,8 @@ public class EquipmentService {
                 .categoryId(equipment.getCategory().getId())
                 .categoryName(equipment.getCategory().getName())
                 .tags(tagNames)
+                .institutionId(equipment.getDepartment().getInstitution().getId())
+                .institutionName(equipment.getDepartment().getInstitution().getName())
                 .build();
     }
 }

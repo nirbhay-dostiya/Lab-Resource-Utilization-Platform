@@ -21,12 +21,24 @@ public class EquipmentController {
     private final EquipmentService equipmentService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('INSTITUTION_ADMIN')")
     public ResponseEntity<EquipmentResponse> addEquipment(
             @RequestBody EquipmentRequest request,
             Principal principal
     ) {
         return ResponseEntity.ok(equipmentService.addEquipment(request, principal.getName()));
+    }
+
+    @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<EquipmentResponse>> getAllEquipment() {
+        return ResponseEntity.ok(equipmentService.getAllEquipment());
+    }
+
+    @GetMapping("/institution/{institutionId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<EquipmentResponse>> getEquipmentByInstitution(@PathVariable UUID institutionId) {
+        return ResponseEntity.ok(equipmentService.getEquipmentByInstitution(institutionId));
     }
 
     @GetMapping("/department/{departmentId}")
@@ -36,11 +48,12 @@ public class EquipmentController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('LAB_TECHNICIAN')")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('LAB_TECHNICIAN') or hasAuthority('INSTITUTION_ADMIN')")
     public ResponseEntity<EquipmentResponse> updateStatus(
             @PathVariable UUID id,
-            @RequestParam EquipmentStatus status
+            @RequestParam EquipmentStatus status,
+            Principal principal
     ) {
-        return ResponseEntity.ok(equipmentService.updateEquipmentStatus(id, status));
+        return ResponseEntity.ok(equipmentService.updateEquipmentStatus(id, status, principal.getName()));
     }
 }
