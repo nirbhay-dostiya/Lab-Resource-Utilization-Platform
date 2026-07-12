@@ -36,4 +36,19 @@ public class UserService {
 
         return "Successfully assigned " + roleType.name() + " role to user: " + user.getEmail();
     }
+
+    public java.util.List<in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.UserResponse> getAllUsers() {
+        return userRepository.findAll().stream()
+                .map(user -> in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.UserResponse.builder()
+                        .id(user.getId())
+                        .email(user.getEmail())
+                        .firstName(user.getFirstName())
+                        .lastName(user.getLastName())
+                        .isActive(user.getIsActive())
+                        .roles(user.getRoles().stream()
+                                .map(role -> role.getName().name())
+                                .toList())
+                        .build())
+                .toList();
+    }
 }

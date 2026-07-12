@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
@@ -27,69 +28,90 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="main-content">
-      <div className="glass-panel animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '2.5rem' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1 className="text-gradient" style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Welcome Back</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Sign in to manage your lab resources</p>
+    <div className="min-h-screen bg-white text-gray-900 font-sans flex flex-col">
+      {/* Header */}
+      <header className="flex items-center justify-between px-8 py-6">
+        <div className="flex items-center gap-2">
+          {/* Logo Placeholder - Circle Gradient */}
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-pink to-brand-orange"></div>
+          <span className="text-xl font-semibold tracking-tight">LabManager</span>
         </div>
+        <Link to="/signup" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <span className="font-medium text-sm">Sign Up</span>
+        </Link>
+      </header>
 
-        {error && (
-          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--error-color)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
-            {error}
-          </div>
-        )}
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 pb-20">
+        <div className="w-full max-w-[400px]">
+          <h1 className="text-[2.75rem] font-medium tracking-tight text-gray-900 mb-10">Sign In</h1>
+          
+          {error && (
+            <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-6 text-sm border border-red-100">
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="email">Email Address</label>
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', top: '50%', left: '1rem', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>
-                <Mail size={18} />
-              </div>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            {/* Email Field */}
+            <div>
               <input
-                id="email"
                 type="email"
-                className="form-input"
-                style={{ paddingLeft: '2.75rem' }}
-                placeholder="you@institution.edu"
+                placeholder="Email or Username"
+                className="w-full rounded-full border border-gray-300 px-6 py-3.5 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-orange/20 focus:border-brand-orange transition-all"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
-          </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="password">Password</label>
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', top: '50%', left: '1rem', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}>
-                <Lock size={18} />
-              </div>
+            {/* Password Field */}
+            <div className="relative">
               <input
-                id="password"
-                type="password"
-                className="form-input"
-                style={{ paddingLeft: '2.75rem' }}
-                placeholder="••••••••"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                className="w-full rounded-full border border-gray-300 pl-6 pr-12 py-3.5 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-orange/20 focus:border-brand-orange transition-all"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+              <button 
+                type="button" 
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
             </div>
-          </div>
 
-          <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1rem' }} disabled={isLoading}>
-            {isLoading ? <Loader2 size={20} className="animate-spin" /> : (
-              <>Sign In <ArrowRight size={18} /></>
-            )}
-          </button>
-        </form>
+            {/* Forgot Password Link */}
+            <div className="mb-2 pl-2">
+              <a href="#" className="text-[#ff4500] hover:text-[#e03d00] text-sm font-medium transition-colors">
+                Forgot password?
+              </a>
+            </div>
 
-        <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-          Don't have an account? <Link to="/signup" style={{ color: 'var(--primary-color)', textDecoration: 'none', fontWeight: '500' }}>Sign up</Link>
-        </p>
-      </div>
+            {/* Submit Button */}
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-[#ff4500] to-[#ff007f] hover:opacity-90 text-white rounded-full py-3.5 font-medium flex items-center justify-center gap-2 transition-opacity disabled:opacity-70 mt-2"
+            >
+              {isLoading ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <>
+                  <ArrowRight size={20} className="mr-1" /> Sign In
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </main>
     </div>
   );
 };

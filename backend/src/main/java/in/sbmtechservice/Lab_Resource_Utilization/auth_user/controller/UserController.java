@@ -21,4 +21,10 @@ public class UserController {
         String result = userService.assignRoleToUser(request.getUserId(), request.getNewRole());
         return ResponseEntity.ok(result);
     }
+
+    @GetMapping
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<java.util.List<in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.UserResponse>> getAllUsers() {
+        return ResponseEntity.ok(userService.getAllUsers());
+    }
 }

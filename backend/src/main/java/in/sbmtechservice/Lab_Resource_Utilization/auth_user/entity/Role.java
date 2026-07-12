@@ -32,6 +32,7 @@ public class Role {
 
     // Inverse side of the Many-to-Many relationship with User
     @ManyToMany(mappedBy = "roles", fetch = FetchType.LAZY)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Builder.Default
     private Set<User> users = new HashSet<>();
 

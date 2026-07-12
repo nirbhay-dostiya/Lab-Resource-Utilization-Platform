@@ -28,4 +28,12 @@ public class AuthenticationController {
     ) {
         return ResponseEntity.ok(service.authenticate(request));
     }
+
+    @GetMapping("/profile")
+    public ResponseEntity<?> getUserProfile(org.springframework.security.core.Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof org.springframework.security.core.userdetails.UserDetails) {
+            return ResponseEntity.ok(authentication.getPrincipal());
+        }
+        return ResponseEntity.status(401).body("Unauthorized");
+    }
 }
