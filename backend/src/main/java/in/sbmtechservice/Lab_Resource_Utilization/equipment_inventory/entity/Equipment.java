@@ -49,6 +49,9 @@ public class Equipment {
     @Column(name = "serial_number", nullable = false, unique = true, length = 100)
     private String serialNumber;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     @Builder.Default
