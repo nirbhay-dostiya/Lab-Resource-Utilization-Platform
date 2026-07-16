@@ -309,8 +309,8 @@ const Dashboard = () => {
       {/* Top Navigation */}
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-pink to-brand-orange"></div>
-          <span className="text-xl font-semibold tracking-tight">LabManager</span>
+          <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
+          <span className="text-xl font-semibold tracking-tight">Lab Resource Utilization</span>
         </div>
         <div className="flex items-center gap-6">
           <div className="text-sm font-medium text-gray-600 hidden sm:block">

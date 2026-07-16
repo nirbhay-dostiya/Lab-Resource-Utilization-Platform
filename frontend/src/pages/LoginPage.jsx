@@ -32,9 +32,9 @@ const LoginPage = () => {
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-6">
         <div className="flex items-center gap-2">
-          {/* Logo Placeholder - Circle Gradient */}
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-pink to-brand-orange"></div>
-          <span className="text-xl font-semibold tracking-tight">LabManager</span>
+          {/* Logo */}
+          <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
+          <span className="text-xl font-semibold tracking-tight">Lab Resource Utilization</span>
         </div>
         <Link to="/signup" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
