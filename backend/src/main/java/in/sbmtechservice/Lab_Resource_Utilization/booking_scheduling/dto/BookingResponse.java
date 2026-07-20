@@ -14,6 +14,9 @@ public class BookingResponse {
     private String userName;
     private UUID equipmentId;
     private String equipmentName;
+    private UUID equipmentInstitutionId;
+    private String equipmentInstitutionName;
+    private String userInstitutionName;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private String purpose;

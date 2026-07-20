@@ -15,6 +15,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Component
@@ -26,11 +28,18 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final InstitutionRepository institutionRepository;
     private final DepartmentRepository departmentRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional
     public void run(String... args) throws Exception {
         log.info("Checking database for default roles...");
+        try {
+            jdbcTemplate.execute("ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_name_check");
+            log.info("Successfully dropped roles_name_check constraint if it existed.");
+        } catch (Exception e) {
+            log.warn("Could not drop roles_name_check constraint. It may not exist. Error: {}", e.getMessage());
+        }
 
         // Iterate through all the roles defined in your RoleType Enum
         for (RoleType roleType : RoleType.values()) {
@@ -55,18 +64,32 @@ public class DatabaseSeeder implements CommandLineRunner {
         log.info("Checking database for default admin users...");
 
         // 1. Seed System Admin
-        if (!userRepository.existsByEmail("sysadmin@example.com")) {
+        if (!userRepository.existsByEmail("nirbhay@gmail.com")) {
             Role sysAdminRole = roleRepository.findByName(RoleType.SYSTEM_ADMIN).orElseThrow();
             User sysAdmin = User.builder()
-                    .firstName("System")
+                    .firstName("Nirbhay")
                     .lastName("Admin")
-                    .email("sysadmin@example.com")
-                    .passwordHash(passwordEncoder.encode("admin123"))
+                    .email("nirbhay@gmail.com")
+                    .passwordHash(passwordEncoder.encode("Strong12345"))
                     .isActive(true)
                     .build();
             sysAdmin.getRoles().add(sysAdminRole);
             userRepository.save(sysAdmin);
-            log.info("Inserted default System Admin user (sysadmin@example.com).");
+            log.info("Inserted default System Admin user (nirbhay@gmail.com).");
+        }
+
+        if (!userRepository.existsByEmail("systemadmin@gmail.com")) {
+            Role sysAdminRole = roleRepository.findByName(RoleType.SYSTEM_ADMIN).orElseThrow();
+            User sysAdmin2 = User.builder()
+                    .firstName("System")
+                    .lastName("Admin")
+                    .email("systemadmin@gmail.com")
+                    .passwordHash(passwordEncoder.encode("Strong12345"))
+                    .isActive(true)
+                    .build();
+            sysAdmin2.getRoles().add(sysAdminRole);
+            userRepository.save(sysAdmin2);
+            log.info("Inserted second System Admin user (systemadmin@gmail.com).");
         }
 
         // 2. Seed Institution Admin

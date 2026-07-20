@@ -21,7 +21,7 @@ public class EquipmentController {
     private final EquipmentService equipmentService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('INSTITUTION_ADMIN')")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
     public ResponseEntity<EquipmentResponse> addEquipment(
             @RequestBody EquipmentRequest request,
             Principal principal
@@ -48,7 +48,7 @@ public class EquipmentController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('LAB_TECHNICIAN') or hasAuthority('INSTITUTION_ADMIN')")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('LAB_TECHNICIAN')")
     public ResponseEntity<EquipmentResponse> updateStatus(
             @PathVariable UUID id,
             @RequestParam EquipmentStatus status,

@@ -41,13 +41,23 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const signupInstitution = async (userData) => {
+    const res = await api.post('/auth/register/institution', userData);
+    return res.data;
+  };
+
+  const signupStudent = async (userData) => {
+    const res = await api.post('/auth/register/student', userData);
+    return res.data;
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, signup, signupInstitution, signupStudent, logout, loading }}>
       {!loading && children}
     </AuthContext.Provider>
   );

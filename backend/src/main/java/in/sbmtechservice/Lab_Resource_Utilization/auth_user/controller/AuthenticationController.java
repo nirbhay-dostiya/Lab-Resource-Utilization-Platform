@@ -3,6 +3,8 @@ package in.sbmtechservice.Lab_Resource_Utilization.auth_user.controller;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.AuthenticationRequest;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.AuthenticationResponse;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.RegisterRequest;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.InstitutionRegisterRequest;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.StudentRegisterRequest;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.service.AuthenticationService;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,20 @@ public class AuthenticationController {
             @RequestBody RegisterRequest request
     ) {
         return ResponseEntity.ok(service.register(request));
+    }
+
+    @PostMapping("/register/institution")
+    public ResponseEntity<AuthenticationResponse> registerInstitution(
+            @RequestBody InstitutionRegisterRequest request
+    ) {
+        return ResponseEntity.ok(service.registerInstitution(request));
+    }
+
+    @PostMapping("/register/student")
+    public ResponseEntity<AuthenticationResponse> registerStudent(
+            @RequestBody StudentRegisterRequest request
+    ) {
+        return ResponseEntity.ok(service.registerStudent(request));
     }
 
     @PostMapping("/login")

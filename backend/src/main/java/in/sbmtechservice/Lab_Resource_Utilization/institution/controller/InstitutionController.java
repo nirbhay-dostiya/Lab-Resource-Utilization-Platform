@@ -23,9 +23,26 @@ public class InstitutionController {
         return ResponseEntity.ok(institutionService.createInstitution(request));
     }
 
+    @PostMapping("/{id}/verify")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<InstitutionResponse> verifyInstitution(@PathVariable java.util.UUID id) {
+        return ResponseEntity.ok(institutionService.verifyInstitution(id));
+    }
+
+    @PostMapping("/{id}/suspend")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<InstitutionResponse> suspendInstitution(@PathVariable java.util.UUID id) {
+        return ResponseEntity.ok(institutionService.suspendInstitution(id));
+    }
+
     @GetMapping
     @PreAuthorize("isAuthenticated()") // Anyone logged in can view the list of institutions
     public ResponseEntity<List<InstitutionResponse>> getAllInstitutions(java.security.Principal principal) {
         return ResponseEntity.ok(institutionService.getAllInstitutions(principal.getName()));
+    }
+
+    @GetMapping("/public")
+    public ResponseEntity<List<InstitutionResponse>> getPublicInstitutions() {
+        return ResponseEntity.ok(institutionService.getPublicInstitutions());
     }
 }

@@ -9,6 +9,7 @@ import java.util.UUID;
 public class InstitutionResponse {
     private UUID id;
     private String name;
+    private String domain;
     private String address;
     private String contactEmail;
     private String contactPhone;

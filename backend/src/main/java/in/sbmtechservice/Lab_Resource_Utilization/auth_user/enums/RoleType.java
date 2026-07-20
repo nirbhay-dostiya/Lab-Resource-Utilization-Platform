@@ -6,6 +6,7 @@ public enum RoleType {
     LAB_MANAGER,
     DEPT_HEAD,
     INSTITUTION_ADMIN,
-    SYSTEM_ADMIN
+    SYSTEM_ADMIN,
+    STUDENT
 
 }

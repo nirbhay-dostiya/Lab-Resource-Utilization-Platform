@@ -59,6 +59,21 @@ public class BookingService {
             throw new IllegalStateException("This time slot is already booked for this equipment.");
         }
 
+        // 4.5. Cross-Institute Booking Validation for Lab Managers
+        boolean isLabManager = user.getRoles().stream()
+                .anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.LAB_MANAGER);
+
+        if (isLabManager) {
+            UUID userInstId = user.getInstitution() != null ? user.getInstitution().getId() 
+                    : (user.getDepartment() != null && user.getDepartment().getInstitution() != null 
+                        ? user.getDepartment().getInstitution().getId() : null);
+            UUID eqInstId = equipment.getDepartment().getInstitution().getId();
+            
+            if (userInstId != null && userInstId.equals(eqInstId)) {
+                throw new SecurityException("Lab Managers can only book equipment belonging to other institutes, not their own.");
+            }
+        }
+
         // 5. Save Booking
         Booking booking = Booking.builder()
                 .user(user)
@@ -66,7 +81,7 @@ public class BookingService {
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .purpose(request.getPurpose())
-                .status(BookingStatus.CONFIRMED)
+                .status(BookingStatus.PENDING)
                 .build();
 
         Booking saved = bookingRepository.save(booking);
@@ -97,20 +112,38 @@ public class BookingService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found."));
         
         boolean isSystemAdmin = user.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.SYSTEM_ADMIN);
-        boolean isInstAdmin = user.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.INSTITUTION_ADMIN);
+        boolean isInstAdminOrLabManager = user.getRoles().stream().anyMatch(r -> 
+            r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.INSTITUTION_ADMIN || 
+            r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.LAB_MANAGER);
         boolean isDeptHead = user.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.DEPT_HEAD);
 
         List<Booking> bookings;
 
         if (isSystemAdmin) {
             bookings = bookingRepository.findAll();
-        } else if (isInstAdmin) {
+        } else if (isInstAdminOrLabManager) {
             UUID instId = user.getInstitution() != null ? user.getInstitution().getId() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getId() : null);
-            if (instId == null) throw new SecurityException("Institution Admin is not associated with an institution.");
-            bookings = bookingRepository.findByEquipmentDepartmentInstitutionId(instId);
+            if (instId == null) {
+                bookings = new java.util.ArrayList<>(bookingRepository.findByUserId(user.getId()));
+            } else {
+                List<Booking> instBookings = bookingRepository.findByEquipmentDepartmentInstitutionId(instId);
+                List<Booking> myBookings = bookingRepository.findByUserId(user.getId());
+                java.util.Map<UUID, Booking> bookingMap = new java.util.LinkedHashMap<>();
+                instBookings.forEach(b -> bookingMap.put(b.getId(), b));
+                myBookings.forEach(b -> bookingMap.put(b.getId(), b));
+                bookings = new java.util.ArrayList<>(bookingMap.values());
+            }
         } else if (isDeptHead) {
-            if (user.getDepartment() == null) throw new SecurityException("Department Head is not associated with a department.");
-            bookings = bookingRepository.findByEquipmentDepartmentId(user.getDepartment().getId());
+            if (user.getDepartment() == null) {
+                bookings = new java.util.ArrayList<>(bookingRepository.findByUserId(user.getId()));
+            } else {
+                List<Booking> deptBookings = bookingRepository.findByEquipmentDepartmentId(user.getDepartment().getId());
+                List<Booking> myBookings = bookingRepository.findByUserId(user.getId());
+                java.util.Map<UUID, Booking> bookingMap = new java.util.LinkedHashMap<>();
+                deptBookings.forEach(b -> bookingMap.put(b.getId(), b));
+                myBookings.forEach(b -> bookingMap.put(b.getId(), b));
+                bookings = new java.util.ArrayList<>(bookingMap.values());
+            }
         } else {
             throw new SecurityException("You do not have permission to view all bookings.");
         }
@@ -127,6 +160,9 @@ public class BookingService {
                 .userName(booking.getUser().getFirstName() + " " + booking.getUser().getLastName())
                 .equipmentId(booking.getEquipment().getId())
                 .equipmentName(booking.getEquipment().getName())
+                .equipmentInstitutionId(booking.getEquipment().getDepartment().getInstitution().getId())
+                .equipmentInstitutionName(booking.getEquipment().getDepartment().getInstitution().getName())
+                .userInstitutionName(booking.getUser().getInstitution() != null ? booking.getUser().getInstitution().getName() : (booking.getUser().getDepartment() != null ? booking.getUser().getDepartment().getInstitution().getName() : "Unknown"))
                 .startTime(booking.getStartTime())
                 .endTime(booking.getEndTime())
                 .purpose(booking.getPurpose())
