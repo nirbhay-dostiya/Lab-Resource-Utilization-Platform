@@ -1,0 +1,118 @@
+package in.sbmtechservice.Lab_Resource_Utilization.institution.service;
+
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.institution.dto.InstitutionRequest;
+import in.sbmtechservice.Lab_Resource_Utilization.institution.dto.InstitutionResponse;
+import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution;
+import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.InstitutionRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class InstitutionService {
+
+    private final InstitutionRepository institutionRepository;
+    private final UserRepository userRepository;
+
+    @Transactional
+    public InstitutionResponse createInstitution(InstitutionRequest request) {
+        if (institutionRepository.existsByName(request.getName())) {
+            throw new IllegalArgumentException("Institution with this name already exists.");
+        }
+
+        Institution institution = Institution.builder()
+                .name(request.getName())
+                .domain(request.getDomain())
+                .address(request.getAddress())
+                .contactEmail(request.getContactEmail())
+                .contactPhone(request.getContactPhone())
+                .isActive(true)
+                .build();
+
+        Institution saved = institutionRepository.save(institution);
+        return mapToResponse(saved);
+    }
+
+    public List<InstitutionResponse> getAllInstitutions(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        // Allow all authenticated users to see the list of institutions for filtering and booking
+        return institutionRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public InstitutionResponse verifyInstitution(UUID id) {
+        Institution institution = institutionRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Institution not found"));
+        
+        institution.setIsActive(true);
+        institutionRepository.save(institution);
+
+        // Activate all users belonging to this institution who are INSTITUTION_ADMINs
+        List<User> users = userRepository.findAll().stream()
+                .filter(u -> u.getInstitution() != null && u.getInstitution().getId().equals(id))
+                .filter(u -> u.getRoles().stream().anyMatch(r -> r.getName() == RoleType.INSTITUTION_ADMIN))
+                .collect(Collectors.toList());
+
+        for (User u : users) {
+            u.setIsActive(true);
+            userRepository.save(u);
+        }
+
+        return mapToResponse(institution);
+    }
+
+    @Transactional
+    public InstitutionResponse suspendInstitution(UUID id) {
+        Institution institution = institutionRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Institution not found"));
+        
+        institution.setIsActive(false);
+        institutionRepository.save(institution);
+
+        // Suspend all users belonging to this institution who are INSTITUTION_ADMINs
+        List<User> users = userRepository.findAll().stream()
+                .filter(u -> u.getInstitution() != null && u.getInstitution().getId().equals(id))
+                .filter(u -> u.getRoles().stream().anyMatch(r -> r.getName() == RoleType.INSTITUTION_ADMIN))
+                .collect(Collectors.toList());
+
+        for (User u : users) {
+            u.setIsActive(false);
+            userRepository.save(u);
+        }
+
+        return mapToResponse(institution);
+    }
+
+    public List<InstitutionResponse> getPublicInstitutions() {
+        return institutionRepository.findAll().stream()
+                .filter(Institution::getIsActive)
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    private InstitutionResponse mapToResponse(Institution institution) {
+        return InstitutionResponse.builder()
+                .id(institution.getId())
+                .name(institution.getName())
+                .domain(institution.getDomain())
+                .address(institution.getAddress())
+                .contactEmail(institution.getContactEmail())
+                .contactPhone(institution.getContactPhone())
+                .isActive(institution.getIsActive())
+                .build();
+    }
+}
