@@ -19,6 +19,7 @@ public class EquipmentResponse {
     private String description;
     private EquipmentStatus status;
     private String documentationUrl;
+    private String imageBase64;
 
     private UUID departmentId;
     private String departmentName;

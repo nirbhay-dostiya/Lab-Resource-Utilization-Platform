@@ -31,6 +31,7 @@ public class DailyUtilizationMetric {
     // Many-to-One ONLY. (Do not put mappedBy in Equipment).
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "equipment_id", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private Equipment equipment;
 
     @Column(name = "record_date", nullable = false)

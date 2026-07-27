@@ -46,6 +46,12 @@ public class AccessRequest {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String justification;
 
+    @Column(name = "requested_start")
+    private java.time.LocalDate requestedStart;
+
+    @Column(name = "requested_end")
+    private java.time.LocalDate requestedEnd;
+
     @Column(name = "reviewed_at")
     private LocalDateTime reviewedAt;
 

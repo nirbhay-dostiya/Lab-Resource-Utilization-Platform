@@ -10,4 +10,16 @@ public class LabResourceUtilizationApplication {
 		SpringApplication.run(LabResourceUtilizationApplication.class, args);
 	}
 
+	@org.springframework.context.annotation.Bean
+	public org.springframework.boot.CommandLineRunner dropNotNullConstraint(org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+		return args -> {
+			try {
+				jdbcTemplate.execute("ALTER TABLE shared_equipment_listings ALTER COLUMN agreement_id DROP NOT NULL");
+				System.out.println("Successfully dropped NOT NULL constraint on agreement_id");
+			} catch (Exception e) {
+				System.err.println("Could not drop NOT NULL constraint: " + e.getMessage());
+			}
+		};
+	}
+
 }

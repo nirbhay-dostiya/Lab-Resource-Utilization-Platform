@@ -15,5 +15,6 @@ public class EquipmentRequest {
     private String manufacturer;
     private String modelNumber;
     private String documentationUrl;
+    private String imageBase64;
     private Set<UUID> tagIds;
 }

@@ -7,6 +7,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.dto.Booking
 import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.entity.Booking;
 import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.enums.BookingStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.repository.BookingRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.repository.WaitlistRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.entity.Equipment;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.enums.EquipmentStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository.EquipmentRepository;
@@ -26,11 +27,12 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final EquipmentRepository equipmentRepository;
     private final UserRepository userRepository;
+    private final WaitlistRepository waitlistRepository;
 
     @Transactional
     public BookingResponse createBooking(BookingRequest request, String userEmail) {
         // 1. Time Validation
-        if (request.getStartTime().isBefore(LocalDateTime.now())) {
+        if (request.getStartTime().isBefore(LocalDateTime.now().minusMinutes(5))) {
             throw new IllegalArgumentException("Cannot book equipment in the past.");
         }
         if (request.getEndTime().isBefore(request.getStartTime())) {
@@ -95,6 +97,36 @@ public class BookingService {
 
         booking.setStatus(newStatus);
         Booking saved = bookingRepository.save(booking);
+
+        if (newStatus == BookingStatus.CANCELLED) {
+            // Auto-allocate waitlist
+            List<in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.entity.Waitlist> waitlists = waitlistRepository
+                    .findByEquipmentIdAndStatusOrderByCreatedAtAsc(booking.getEquipment().getId(), in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.enums.WaitlistStatus.ACTIVE);
+            
+            for (in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.entity.Waitlist waitlist : waitlists) {
+                // Simplified overlap check: check if waitlist timeslot falls within the cancelled booking's slot
+                if (!waitlist.getRequestedStart().isBefore(booking.getStartTime()) && 
+                    !waitlist.getRequestedEnd().isAfter(booking.getEndTime())) {
+                    
+                    // Create new booking
+                    Booking newBooking = Booking.builder()
+                            .user(waitlist.getUser())
+                            .equipment(booking.getEquipment())
+                            .startTime(waitlist.getRequestedStart())
+                            .endTime(waitlist.getRequestedEnd())
+                            .purpose("Auto-allocated from waitlist (Pending Approval)")
+                            .status(BookingStatus.PENDING)
+                            .build();
+                    bookingRepository.save(newBooking);
+
+                    // Update waitlist status
+                    waitlist.setStatus(in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.enums.WaitlistStatus.FULFILLED);
+                    waitlistRepository.save(waitlist);
+                    break; // Only allocate one waitlist per cancellation for simplicity
+                }
+            }
+        }
+
         return mapToResponse(saved);
     }
 

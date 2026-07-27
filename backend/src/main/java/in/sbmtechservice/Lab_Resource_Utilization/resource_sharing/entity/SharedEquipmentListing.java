@@ -27,9 +27,9 @@ public class SharedEquipmentListing {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    // Many-to-One relationship with the Sharing Agreement
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "agreement_id", nullable = false)
+    // Many-to-One relationship with the Sharing Agreement (Optional for Global Sharing)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agreement_id")
     private SharingAgreement agreement;
 
     // Many-to-One relationship with Equipment (The shared asset)
@@ -39,6 +39,15 @@ public class SharedEquipmentListing {
 
     @Column(name = "external_hourly_rate", precision = 10, scale = 2, nullable = false)
     private BigDecimal externalHourlyRate;
+
+    @Column(name = "terms_and_conditions", columnDefinition = "TEXT")
+    private String termsAndConditions;
+
+    @Column(name = "available_from")
+    private java.time.LocalDate availableFrom;
+
+    @Column(name = "available_to")
+    private java.time.LocalDate availableTo;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
