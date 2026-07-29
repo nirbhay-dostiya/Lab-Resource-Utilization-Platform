@@ -16,5 +16,6 @@ public class EquipmentRequest {
     private String modelNumber;
     private String documentationUrl;
     private String imageBase64;
+    private java.math.BigDecimal pricePerHour;
     private Set<UUID> tagIds;
 }

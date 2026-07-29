@@ -23,6 +23,10 @@ public interface EquipmentRepository extends JpaRepository<Equipment, UUID> {
     // Fetch all equipment belonging to a specific department
     List<Equipment> findByDepartmentId(UUID departmentId);
 
+    // Fetch all equipment belonging to an institution
+    @Query("SELECT e FROM Equipment e WHERE e.department.institution.id = :institutionId")
+    List<Equipment> findByDepartmentInstitutionId(@Param("institutionId") UUID institutionId);
+
     // Fetch all equipment belonging to a specific category
     List<Equipment> findByCategoryId(UUID categoryId);
 

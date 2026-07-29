@@ -7,8 +7,11 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 @Data
 @Builder
@@ -21,9 +24,12 @@ public class InvoiceResponse {
     private BigDecimal totalAmount;
     private InvoiceStatus status;
     private List<LineItemResponse> lineItems;
+    private List<TransactionResponse> transactions;
 
     @Data
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class LineItemResponse {
         private UUID id;
         private ReferenceType referenceType;
@@ -31,5 +37,10 @@ public class InvoiceResponse {
         private BigDecimal quantity;
         private BigDecimal unitPrice;
         private BigDecimal lineTotal;
+        private String equipmentName;
+        private String equipmentInstituteName;
+        private LocalDateTime bookingStartTime;
+        private LocalDateTime bookingEndTime;
+        private UUID referenceId;
     }
 }

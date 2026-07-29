@@ -63,6 +63,9 @@ public class Equipment {
     @Column(name = "image_base64", columnDefinition = "TEXT")
     private String imageBase64;
 
+    @Column(name = "price_per_hour", precision = 10, scale = 2)
+    private java.math.BigDecimal pricePerHour;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

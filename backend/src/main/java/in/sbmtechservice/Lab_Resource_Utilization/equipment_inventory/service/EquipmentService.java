@@ -73,6 +73,7 @@ public class EquipmentService {
                 .description(request.getDescription())
                 .documentationUrl(request.getDocumentationUrl())
                 .imageBase64(request.getImageBase64())
+                .pricePerHour(request.getPricePerHour() != null ? request.getPricePerHour() : java.math.BigDecimal.ZERO)
                 .department(department)
                 .category(category)
                 .tags(tags)
@@ -127,6 +128,53 @@ public class EquipmentService {
         return mapToResponse(saved);
     }
 
+    @Transactional
+    public EquipmentResponse updateEquipment(UUID equipmentId, EquipmentRequest request, String currentUserEmail) {
+        User currentUser = userRepository.findByEmail(currentUserEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        boolean isSystemAdmin = currentUser.getRoles().stream()
+                .anyMatch(role -> role.getName().name().equals("SYSTEM_ADMIN"));
+
+        Equipment equipment = equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
+
+        if (!isSystemAdmin) {
+            UUID userInstId = currentUser.getInstitution() != null ? currentUser.getInstitution().getId() : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null ? currentUser.getDepartment().getInstitution().getId() : null);
+            if (userInstId == null || !userInstId.equals(equipment.getDepartment().getInstitution().getId())) {
+                throw new SecurityException("You can only update equipment in your own institution.");
+            }
+        }
+
+        Department department = departmentRepository.findById(request.getDepartmentId())
+                .orElseThrow(() -> new IllegalArgumentException("Department not found."));
+        EquipmentCategory category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new IllegalArgumentException("Category not found."));
+
+        equipment.setName(request.getName());
+        equipment.setManufacturer(request.getManufacturer());
+        equipment.setModelNumber(request.getModelNumber());
+        equipment.setSerialNumber(request.getSerialNumber());
+        equipment.setDescription(request.getDescription());
+        equipment.setDocumentationUrl(request.getDocumentationUrl());
+        if (request.getImageBase64() != null) {
+            equipment.setImageBase64(request.getImageBase64());
+        }
+        equipment.setPricePerHour(request.getPricePerHour() != null ? request.getPricePerHour() : java.math.BigDecimal.ZERO);
+        equipment.setDepartment(department);
+        equipment.setCategory(category);
+        
+        Set<Tag> tags = new HashSet<>();
+        if (request.getTagIds() != null && !request.getTagIds().isEmpty()) {
+            List<Tag> fetchedTags = tagRepository.findAllById(request.getTagIds());
+            tags.addAll(fetchedTags);
+        }
+        equipment.setTags(tags);
+
+        Equipment saved = equipmentRepository.save(equipment);
+        return mapToResponse(saved);
+    }
+
     private EquipmentResponse mapToResponse(Equipment equipment) {
         Set<String> tagNames = equipment.getTags().stream()
                 .map(Tag::getName)
@@ -142,6 +190,7 @@ public class EquipmentService {
                 .status(equipment.getStatus())
                 .documentationUrl(equipment.getDocumentationUrl())
                 .imageBase64(equipment.getImageBase64())
+                .pricePerHour(equipment.getPricePerHour())
                 .departmentId(equipment.getDepartment().getId())
                 .departmentName(equipment.getDepartment().getName())
                 .categoryId(equipment.getCategory().getId())

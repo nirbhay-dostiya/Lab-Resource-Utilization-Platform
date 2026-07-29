@@ -25,7 +25,7 @@ public class BillingController {
     }
 
     @PostMapping("/invoices/{id}/pay")
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<String> payInvoice(@PathVariable UUID id, @RequestBody TransactionRequest request) {
         return ResponseEntity.ok(billingService.payInvoice(id, request));
     }
@@ -34,5 +34,17 @@ public class BillingController {
     @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD')")
     public ResponseEntity<InvoiceResponse> getInvoice(@PathVariable UUID id) {
         return ResponseEntity.ok(billingService.getInvoiceById(id));
+    }
+
+    @GetMapping("/invoices/department/{departmentId}")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('INSTITUTION_ADMIN') or hasAuthority('INSTITUTION_USER')")
+    public ResponseEntity<java.util.List<InvoiceResponse>> getInvoicesByDepartment(@PathVariable UUID departmentId) {
+        return ResponseEntity.ok(billingService.getInvoicesByDepartment(departmentId));
+    }
+
+    @GetMapping("/invoices")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.List<InvoiceResponse>> getAllInvoices() {
+        return ResponseEntity.ok(billingService.getAllInvoices());
     }
 }

@@ -20,6 +20,7 @@ public class EquipmentResponse {
     private EquipmentStatus status;
     private String documentationUrl;
     private String imageBase64;
+    private java.math.BigDecimal pricePerHour;
 
     private UUID departmentId;
     private String departmentName;

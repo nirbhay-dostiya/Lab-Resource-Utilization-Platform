@@ -20,4 +20,14 @@ public class CalibrationRecordController {
     public ResponseEntity<CalibrationRecordResponse> logCalibration(@RequestBody CalibrationRecordRequest request) {
         return ResponseEntity.ok(calibrationService.logCalibration(request));
     }
+
+    @GetMapping("/equipment/{equipmentId}")
+    public ResponseEntity<java.util.List<CalibrationRecordResponse>> getRecordsByEquipment(@PathVariable java.util.UUID equipmentId) {
+        return ResponseEntity.ok(calibrationService.getRecordsByEquipment(equipmentId));
+    }
+
+    @GetMapping
+    public ResponseEntity<java.util.List<CalibrationRecordResponse>> getAllRecords() {
+        return ResponseEntity.ok(calibrationService.getAllRecords());
+    }
 }

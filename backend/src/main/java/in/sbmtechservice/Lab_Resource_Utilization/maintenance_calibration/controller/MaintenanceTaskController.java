@@ -33,4 +33,14 @@ public class MaintenanceTaskController {
     ) {
         return ResponseEntity.ok(maintenanceTaskService.completeTask(id, resolutionNotes, finalCost));
     }
+
+    @GetMapping("/equipment/{equipmentId}")
+    public ResponseEntity<java.util.List<MaintenanceTaskResponse>> getTasksByEquipment(@PathVariable UUID equipmentId) {
+        return ResponseEntity.ok(maintenanceTaskService.getTasksByEquipment(equipmentId));
+    }
+
+    @GetMapping
+    public ResponseEntity<java.util.List<MaintenanceTaskResponse>> getAllTasks() {
+        return ResponseEntity.ok(maintenanceTaskService.getAllTasks());
+    }
 }

@@ -13,10 +13,10 @@ public class CalibrationRecordResponse {
     private UUID id;
     private UUID equipmentId;
     private String equipmentName;
-    private String calibratedByName; // Will be null if a vendor did it
+    private String performedBy;
     private String vendorName;
     private LocalDate calibrationDate;
-    private LocalDate expiryDate;
+    private LocalDate nextDueDate;
     private String certificateUrl;
-    private CalibrationStatus status;
+    private String result;
 }

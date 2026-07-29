@@ -78,6 +78,18 @@ public class MaintenanceTaskService {
         return mapToResponse(saved);
     }
 
+    public List<MaintenanceTaskResponse> getTasksByEquipment(UUID equipmentId) {
+        return maintenanceTaskRepository.findByEquipmentIdOrderByScheduledDateDesc(equipmentId).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<MaintenanceTaskResponse> getAllTasks() {
+        return maintenanceTaskRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
     private MaintenanceTaskResponse mapToResponse(MaintenanceTask task) {
         String techName = task.getTechnician() != null ?
                 task.getTechnician().getFirstName() + " " + task.getTechnician().getLastName() : "Unassigned";

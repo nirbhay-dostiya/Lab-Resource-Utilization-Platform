@@ -47,20 +47,32 @@ public class CalibrationRecordService {
         return mapToResponse(saved);
     }
 
+    public java.util.List<CalibrationRecordResponse> getRecordsByEquipment(UUID equipmentId) {
+        return calibrationRepository.findByEquipmentIdOrderByCalibrationDateDesc(equipmentId).stream()
+                .map(this::mapToResponse)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    public java.util.List<CalibrationRecordResponse> getAllRecords() {
+        return calibrationRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     private CalibrationRecordResponse mapToResponse(CalibrationRecord record) {
         String techName = record.getCalibratedBy() != null ?
-                record.getCalibratedBy().getFirstName() + " " + record.getCalibratedBy().getLastName() : null;
+                record.getCalibratedBy().getFirstName() + " " + record.getCalibratedBy().getLastName() : record.getVendorName();
 
         return CalibrationRecordResponse.builder()
                 .id(record.getId())
                 .equipmentId(record.getEquipment().getId())
                 .equipmentName(record.getEquipment().getName())
-                .calibratedByName(techName)
+                .performedBy(techName)
                 .vendorName(record.getVendorName())
                 .calibrationDate(record.getCalibrationDate())
-                .expiryDate(record.getExpiryDate())
+                .nextDueDate(record.getExpiryDate())
                 .certificateUrl(record.getCertificateUrl())
-                .status(record.getStatus())
+                .result(record.getStatus().name())
                 .build();
     }
 }

@@ -11,11 +11,20 @@ import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.repository.
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.entity.Equipment;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.enums.EquipmentStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository.EquipmentRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.Invoice;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.InvoiceLineItem;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.ReferenceType;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.InvoiceRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.InvoiceLineItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -28,6 +37,8 @@ public class BookingService {
     private final EquipmentRepository equipmentRepository;
     private final UserRepository userRepository;
     private final WaitlistRepository waitlistRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final InvoiceLineItemRepository invoiceLineItemRepository;
 
     @Transactional
     public BookingResponse createBooking(BookingRequest request, String userEmail) {
@@ -76,18 +87,60 @@ public class BookingService {
             }
         }
 
-        // 5. Save Booking
+        // 5. Calculate Cost
+        long minutes = ChronoUnit.MINUTES.between(request.getStartTime(), request.getEndTime());
+        double hours = minutes / 60.0;
+        BigDecimal pricePerHour = equipment.getPricePerHour() != null ? equipment.getPricePerHour() : BigDecimal.ZERO;
+        BigDecimal totalAmount = pricePerHour.multiply(BigDecimal.valueOf(hours)).setScale(2, java.math.RoundingMode.HALF_UP);
+
+        BookingStatus initialStatus = totalAmount.compareTo(BigDecimal.ZERO) > 0 ? BookingStatus.PENDING_PAYMENT : BookingStatus.PENDING;
+
+        // 6. Save Booking
         Booking booking = Booking.builder()
                 .user(user)
                 .equipment(equipment)
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .purpose(request.getPurpose())
-                .status(BookingStatus.PENDING)
+                .status(initialStatus)
                 .build();
 
         Booking saved = bookingRepository.save(booking);
-        return mapToResponse(saved);
+        
+        UUID invoiceId = null;
+        if (initialStatus == BookingStatus.PENDING_PAYMENT) {
+            // Generate Invoice
+            Invoice invoice = Invoice.builder()
+                .billedToInstitution(user.getInstitution() != null ? user.getInstitution() : (user.getDepartment() != null ? user.getDepartment().getInstitution() : null))
+                .billedToDepartment(user.getDepartment())
+                .invoiceDate(LocalDate.now())
+                .dueDate(LocalDate.now().plusDays(30))
+                .status(InvoiceStatus.ISSUED)
+                .billingPeriodStart(LocalDate.now())
+                .billingPeriodEnd(LocalDate.now())
+                .totalAmount(totalAmount)
+                .build();
+            
+            InvoiceLineItem lineItem = InvoiceLineItem.builder()
+                .invoice(invoice)
+                .referenceType(ReferenceType.BOOKING)
+                .referenceId(saved.getId())
+                .description("Booking for " + equipment.getName())
+                .quantity(BigDecimal.ONE)
+                .unitPrice(totalAmount)
+                .lineTotal(totalAmount)
+                .build();
+                
+            invoice.getLineItems().add(lineItem);
+            // If both are present, clear institution to favor department (internal charge) to satisfy validation
+            if (invoice.getBilledToDepartment() != null && invoice.getBilledToInstitution() != null) {
+                invoice.setBilledToInstitution(null);
+            }
+            invoice = invoiceRepository.save(invoice);
+            invoiceId = invoice.getId();
+        }
+
+        return mapToResponse(saved, invoiceId, totalAmount);
     }
 
     @Transactional
@@ -186,6 +239,22 @@ public class BookingService {
     }
 
     private BookingResponse mapToResponse(Booking booking) {
+        UUID invoiceId = null;
+        BigDecimal totalAmount = null;
+
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+            List<InvoiceLineItem> lineItems = invoiceLineItemRepository.findByReferenceId(booking.getId());
+            if (!lineItems.isEmpty()) {
+                InvoiceLineItem item = lineItems.get(0);
+                invoiceId = item.getInvoice().getId();
+                totalAmount = item.getLineTotal();
+            }
+        }
+
+        return mapToResponse(booking, invoiceId, totalAmount);
+    }
+
+    private BookingResponse mapToResponse(Booking booking, UUID invoiceId, BigDecimal totalAmount) {
         return BookingResponse.builder()
                 .id(booking.getId())
                 .userId(booking.getUser().getId())
@@ -199,6 +268,8 @@ public class BookingService {
                 .endTime(booking.getEndTime())
                 .purpose(booking.getPurpose())
                 .status(booking.getStatus())
+                .invoiceId(invoiceId)
+                .totalAmount(totalAmount)
                 .build();
     }
 }

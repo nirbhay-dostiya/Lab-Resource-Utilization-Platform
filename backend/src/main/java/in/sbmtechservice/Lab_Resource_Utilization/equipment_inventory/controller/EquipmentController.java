@@ -47,6 +47,16 @@ public class EquipmentController {
         return ResponseEntity.ok(equipmentService.getEquipmentByDepartment(departmentId));
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
+    public ResponseEntity<EquipmentResponse> updateEquipment(
+            @PathVariable UUID id,
+            @RequestBody EquipmentRequest request,
+            Principal principal
+    ) {
+        return ResponseEntity.ok(equipmentService.updateEquipment(id, request, principal.getName()));
+    }
+
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER') or hasAuthority('LAB_TECHNICIAN')")
     public ResponseEntity<EquipmentResponse> updateStatus(

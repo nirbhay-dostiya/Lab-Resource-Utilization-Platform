@@ -21,4 +21,6 @@ public class BookingResponse {
     private LocalDateTime endTime;
     private String purpose;
     private BookingStatus status;
+    private UUID invoiceId;
+    private java.math.BigDecimal totalAmount;
 }

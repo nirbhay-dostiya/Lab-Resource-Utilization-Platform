@@ -5,5 +5,7 @@ public enum PaymentMethod {
     BANK_TRANSFER,
     UPI,
     DEBIT_CARD,
-    WALLET
+    WALLET,
+    INTERNAL_GRANT,
+    QR_CODE
 }
