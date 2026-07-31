@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -59,8 +60,10 @@ public class ResourceSharingService {
     }
 
     public List<SharedEquipmentListingDto> getAllActiveListings() {
+        LocalDate today = LocalDate.now();
         return listingRepository.findAll().stream()
                 .filter(SharedEquipmentListing::getIsActive)
+                .filter(listing -> listing.getAvailableTo() == null || listing.getAvailableTo().isAfter(today) || listing.getAvailableTo().isEqual(today))
                 .map(this::mapToListingDto)
                 .collect(Collectors.toList());
     }

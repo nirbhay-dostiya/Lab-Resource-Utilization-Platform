@@ -18,6 +18,12 @@ import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.Invoic
 import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.TransactionRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.DepartmentRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.entity.Notification;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationChannel;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationReferenceType;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationStatus;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +44,8 @@ public class BillingService {
     private final DepartmentRepository departmentRepository;
     private final BudgetRepository budgetRepository;
     private final BookingRepository bookingRepository;
-    // private final InstitutionRepository institutionRepository; // Uncomment if you have this!
+    private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
 
     @Transactional
     public String createInvoice(InvoiceRequest request) {
@@ -146,6 +153,49 @@ public class BillingService {
                                 booking.setStatus(BookingStatus.PENDING);
                                 bookingRepository.save(booking);
                             }
+                            Notification notif = Notification.builder()
+                                    .user(booking.getUser())
+                                    .referenceType(NotificationReferenceType.BOOKING)
+                                    .referenceId(booking.getId())
+                                    .channel(NotificationChannel.IN_APP)
+                                    .content("Your purchase is confirmed. Payment of ₹" + request.getAmount() + " for invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + " has been successfully processed for " + booking.getEquipment().getName() + ". Thank you for booking with LabResource.")
+                                    .status(NotificationStatus.SENT)
+                                    .isRead(false)
+                                    .build();
+                            notificationRepository.save(notif);
+
+                            // Notify Seller (Owner Institution Admins)
+                            UUID ownerInstId = booking.getEquipment().getDepartment().getInstitution().getId();
+                            java.util.List<in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User> instUsers = userRepository.findAllByInstitutionId(ownerInstId);
+                            for (in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User u : instUsers) {
+                                if (u.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.INSTITUTION_ADMIN || r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.DEPT_HEAD)) {
+                                    Notification sellerNotif = Notification.builder()
+                                            .user(u)
+                                            .referenceType(NotificationReferenceType.BOOKING_APPROVAL_REQUEST)
+                                            .referenceId(booking.getId())
+                                            .channel(NotificationChannel.IN_APP)
+                                            .content("Equipment '" + booking.getEquipment().getName() + "' has been booked by " + booking.getUser().getFirstName() + " " + booking.getUser().getLastName() + ". Payment of ₹" + request.getAmount() + " for invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + " has been received. Please approve this purchase.")
+                                            .status(NotificationStatus.SENT)
+                                            .isRead(false)
+                                            .build();
+                                    notificationRepository.save(sellerNotif);
+                                }
+                            }
+                            
+                            // Notify System Admins for conflict resolution & monitoring
+                            java.util.List<in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User> sysAdmins = userRepository.findAllByRoleName(in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.SYSTEM_ADMIN);
+                            for (in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User admin : sysAdmins) {
+                                Notification adminNotif = Notification.builder()
+                                        .user(admin)
+                                        .referenceType(NotificationReferenceType.BOOKING)
+                                        .referenceId(booking.getId())
+                                        .channel(NotificationChannel.IN_APP)
+                                        .content("SYSTEM ALERT: Invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + " paid. Amount: ₹" + request.getAmount() + ". Booking: " + booking.getEquipment().getName())
+                                        .status(NotificationStatus.SENT)
+                                        .isRead(false)
+                                        .build();
+                                notificationRepository.save(adminNotif);
+                            }
                         });
                     });
         }
@@ -169,6 +219,30 @@ public class BillingService {
 
     public List<InvoiceResponse> getAllInvoices() {
         return invoiceRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    /**
+     * Returns invoices visible to the currently logged-in user's institution.
+     * An invoice is visible if:
+     *  1. The institution is the PAYER (billed-to institution or billed-to department's institution)
+     *  2. The institution is the PROVIDER (owns the equipment in a booking line item)
+     *
+     * SYSTEM_ADMIN users always see all invoices.
+     */
+    public List<InvoiceResponse> getInvoicesForMyInstitution(String userEmail, boolean isSystemAdmin) {
+        if (isSystemAdmin) {
+            return getAllInvoices();
+        }
+        var user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
+        if (user.getInstitution() == null) {
+            // User is not affiliated with any institution — return empty list
+            return java.util.Collections.emptyList();
+        }
+        return invoiceRepository.findInvoicesByInstitutionInvolved(user.getInstitution().getId())
+                .stream()
                 .map(this::mapToResponse)
                 .toList();
     }

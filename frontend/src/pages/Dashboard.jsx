@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar, MoreVertical, LayoutDashboard, Activity, CheckCircle, Wrench, Clock, FileText, ShoppingCart, X, Bell } from 'lucide-react';
+import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar, MoreVertical, LayoutDashboard, Activity, CheckCircle, Wrench, Clock, FileText, ShoppingCart, X, Bell, Search } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../api/axios';
 
@@ -135,6 +135,7 @@ const Dashboard = () => {
   const [analyticsData, setAnalyticsData] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   // Payment Simulation States
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -234,7 +235,12 @@ const Dashboard = () => {
 
   const fetchInvoices = async () => {
     try {
-      const endpoint = selectedDepartment ? `/billing/invoices/department/${selectedDepartment}` : '/billing/invoices';
+      let endpoint = '/billing/invoices';
+      if (selectedDepartment) {
+        endpoint = `/billing/invoices/department/${selectedDepartment}`;
+      } else if (!isSystemAdmin) {
+        endpoint = '/billing/invoices/my-institution';
+      }
       const res = await api.get(endpoint);
       setInvoices(res.data);
     } catch (err) {
@@ -261,6 +267,7 @@ const Dashboard = () => {
       setIsPaymentModalOpen(false);
       setSelectedInvoiceToPay(null);
       fetchInvoices();
+      fetchNotifications();
       if (selectedDepartment) fetchBudgets();
       if (activeSection === 'bookings' || activeSection === 'book_equipment') fetchBookings();
     } catch (err) {
@@ -300,17 +307,18 @@ const Dashboard = () => {
     }
   };
 
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      if (user?.id) {
-        try {
-          const res = await api.get(`/notifications/user/${user.id}/unread`);
-          setNotifications(res.data);
-        } catch (err) {
-          console.error("Failed to fetch notifications", err);
-        }
+  const fetchNotifications = async () => {
+    if (user?.id) {
+      try {
+        const res = await api.get(`/notifications/user/${user.id}/unread`);
+        setNotifications(res.data);
+      } catch (err) {
+        console.error("Failed to fetch notifications", err);
       }
-    };
+    }
+  };
+
+  useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60000); // Polling every minute
     return () => clearInterval(interval);
@@ -1040,15 +1048,19 @@ const Dashboard = () => {
                       notifications.map(n => (
                         <div key={n.id} className="p-3 border-b border-gray-50 hover:bg-gray-50 flex justify-between gap-2 items-start cursor-pointer" onClick={async () => {
                           try {
-                            await api.patch(`/notifications/${n.id}/read`);
-                            setNotifications(notifications.filter(noti => noti.id !== n.id));
+                            if (!n.isRead) {
+                              await api.patch(`/notifications/${n.id}/read`);
+                              setNotifications(notifications.filter(noti => noti.id !== n.id));
+                            }
+                            setSelectedNotification(n);
+                            setShowNotifications(false);
                           } catch (err) {}
                         }}>
                           <div>
-                            <p className="text-sm font-semibold text-gray-800">{n.title}</p>
-                            <p className="text-xs text-gray-600 line-clamp-2">{n.message}</p>
+                            <p className="text-sm font-semibold text-gray-800">{n.title || n.referenceType}</p>
+                            <p className="text-xs text-gray-600 line-clamp-2">{n.message || n.content}</p>
                           </div>
-                          <button className="text-gray-400 hover:text-gray-600 shrink-0">
+                          <button className="text-gray-400 hover:text-gray-600 shrink-0" onClick={(e) => { e.stopPropagation(); setNotifications(notifications.filter(noti => noti.id !== n.id)); }}>
                             <X size={14} />
                           </button>
                         </div>
@@ -2254,7 +2266,28 @@ const Dashboard = () => {
                           onClick={() => {
                             const equipment = equipmentList.find(eq => eq.id === listing.equipmentId);
                             if (equipment) {
-                              setSelectedEquipmentDetails(equipment);
+                              setSelectedEquipmentDetails({
+                                ...equipment,
+                                sharedAvailableFrom: listing.availableFrom,
+                                sharedAvailableTo: listing.availableTo
+                              });
+                            } else {
+                              api.get(`/equipment/${listing.equipmentId}`).then(res => {
+                                setSelectedEquipmentDetails({
+                                  ...res.data,
+                                  sharedAvailableFrom: listing.availableFrom,
+                                  sharedAvailableTo: listing.availableTo
+                                });
+                              }).catch(err => {
+                                console.error("Failed to fetch equipment details", err);
+                                setSelectedEquipmentDetails({
+                                  name: listing.equipmentName,
+                                  institutionName: listing.institutionName,
+                                  sharedAvailableFrom: listing.availableFrom,
+                                  sharedAvailableTo: listing.availableTo,
+                                  status: 'UNKNOWN'
+                                });
+                              });
                             }
                           }}
                         >
@@ -2566,7 +2599,7 @@ const Dashboard = () => {
               <tbody>
                 {filteredInvoices.map(invoice => (
                   <tr key={invoice.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { setSelectedInvoiceDetails(invoice); setIsInvoiceViewOpen(true); }}>
-                    <td className="py-4 font-medium text-gray-800 text-xs">{invoice.id}</td>
+                    <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={invoice.id}>INV-{invoice.id?.substring(0, 8).toUpperCase()}</td>
                     <td className="py-4 text-gray-600 text-xs">
                       {invoice.lineItems && invoice.lineItems.length > 0 ? invoice.lineItems[0].equipmentName || invoice.lineItems[0].description : invoice.bookingId}
                     </td>
@@ -2746,87 +2779,85 @@ const Dashboard = () => {
           )}
         </section>
       )}
+
+      {/* Booking Modal */}
+      {showBookingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
+            <h3 className="text-xl font-medium mb-2">Book Equipment</h3>
+            <p className="text-gray-500 text-sm mb-4">You are booking: <span className="font-medium text-gray-800">{bookingData.equipmentName}</span></p>
+
+            {bookingData.imageBase64 && (
+              <div className="mb-6 flex justify-center">
+                <img src={bookingData.imageBase64} alt={bookingData.equipmentName} className="h-32 object-contain rounded-lg border border-gray-200 shadow-sm" />
+              </div>
+            )}
+
+            <form onSubmit={handleCreateBooking} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                <input
+                  type="datetime-local"
+                  required
+                  className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
+                  value={bookingData.startTime}
+                  onChange={(e) => setBookingData({ ...bookingData, startTime: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                <input
+                  type="datetime-local"
+                  required
+                  className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
+                  value={bookingData.endTime}
+                  onChange={(e) => setBookingData({ ...bookingData, endTime: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
+                <textarea
+                  required
+                  placeholder="Why do you need this equipment?"
+                  className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
+                  rows="3"
+                  value={bookingData.purpose}
+                  onChange={(e) => setBookingData({ ...bookingData, purpose: e.target.value })}
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowBookingModal(false)}
+                  className="px-5 py-2.5 rounded-full text-gray-600 hover:bg-gray-100 font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleJoinWaitlist}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-full font-medium transition-colors"
+                >
+                  Join Waitlist
+                </button>
+                <button
+                  type="submit"
+                  className="bg-brand-orange hover:bg-orange-600 text-white px-5 py-2.5 rounded-full font-medium transition-colors"
+                >
+                  Confirm Booking
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
-        </main >
-
-  {/* Booking Modal */ }
-{
-  showBookingModal && (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in p-4">
-      <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
-        <h3 className="text-xl font-medium mb-2">Book Equipment</h3>
-        <p className="text-gray-500 text-sm mb-4">You are booking: <span className="font-medium text-gray-800">{bookingData.equipmentName}</span></p>
-
-        {bookingData.imageBase64 && (
-          <div className="mb-6 flex justify-center">
-            <img src={bookingData.imageBase64} alt={bookingData.equipmentName} className="h-32 object-contain rounded-lg border border-gray-200 shadow-sm" />
-          </div>
-        )}
-
-        <form onSubmit={handleCreateBooking} className="flex flex-col gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-            <input
-              type="datetime-local"
-              required
-              className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
-              value={bookingData.startTime}
-              onChange={(e) => setBookingData({ ...bookingData, startTime: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-            <input
-              type="datetime-local"
-              required
-              className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
-              value={bookingData.endTime}
-              onChange={(e) => setBookingData({ ...bookingData, endTime: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
-            <textarea
-              required
-              placeholder="Why do you need this equipment?"
-              className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
-              rows="3"
-              value={bookingData.purpose}
-              onChange={(e) => setBookingData({ ...bookingData, purpose: e.target.value })}
-            ></textarea>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-4">
-            <button
-              type="button"
-              onClick={() => setShowBookingModal(false)}
-              className="px-5 py-2.5 rounded-full text-gray-600 hover:bg-gray-100 font-medium transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleJoinWaitlist}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-full font-medium transition-colors"
-            >
-              Join Waitlist
-            </button>
-            <button
-              type="submit"
-              className="bg-brand-orange hover:bg-orange-600 text-white px-5 py-2.5 rounded-full font-medium transition-colors"
-            >
-              Confirm Booking
-            </button>
-          </div>
-        </form>
+        </main>
       </div>
-    </div>
-  )
-}
 
-{/* Edit Equipment Modal */ }
-{
-  showEditEquipmentModal && editingEquipment && (
+  {/* Edit Equipment Modal */}
+  {showEditEquipmentModal && editingEquipment && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => { setShowEditEquipmentModal(false); setEditingEquipment(null); }}>
       <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl relative" onClick={e => e.stopPropagation()}>
         <button onClick={() => { setShowEditEquipmentModal(false); setEditingEquipment(null); }} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors"><X size={20} /></button>
@@ -2867,12 +2898,9 @@ const Dashboard = () => {
         </form>
       </div>
     </div>
-  )
-}
-      </div >
-  {/* Share Equipment Modal */ }
-{
-  showShareModal && (
+  )}
+  {/* Share Equipment Modal */}
+  {showShareModal && (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in p-4">
       <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
         <h3 className="text-xl font-medium mb-2">Share Equipment</h3>
@@ -2929,11 +2957,9 @@ const Dashboard = () => {
         </form>
       </div>
     </div>
-  )
-}
-{/* Access Request Modal */ }
-{
-  showAccessModal && (
+  )}
+  {/* Access Request Modal */}
+  {showAccessModal && (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in p-4">
       <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl">
         <h3 className="text-xl font-medium mb-2">Request Access</h3>
@@ -2994,11 +3020,9 @@ const Dashboard = () => {
         </form>
       </div>
     </div>
-  )
-}
-{/* Equipment Details Modal */ }
-{
-  selectedEquipmentDetails && (
+  )}
+  {/* Equipment Details Modal */}
+  {selectedEquipmentDetails && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
         <button onClick={() => setSelectedEquipmentDetails(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors"><X size={20} /></button>
@@ -3071,12 +3095,9 @@ const Dashboard = () => {
         </div>
       </div>
     </div>
-  )
-}
-
-{/* Booking Details Modal */ }
-{
-  selectedBookingDetails && (
+  )}
+  {/* Booking Details Modal */}
+  {selectedBookingDetails && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
         <button onClick={() => setSelectedBookingDetails(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors"><X size={20} /></button>
@@ -3133,12 +3154,9 @@ const Dashboard = () => {
         </div>
       </div>
     </div>
-  )
-}
-
-{/* Waitlist Details Modal */ }
-{
-  showWaitlistModal && selectedWaitlistDetails && (() => {
+  )}
+  {/* Waitlist Details Modal */}
+  {showWaitlistModal && selectedWaitlistDetails && (() => {
     const eqDetails = equipmentList.find(e => e.id === selectedWaitlistDetails.equipmentId);
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
@@ -3199,12 +3217,9 @@ const Dashboard = () => {
         </div>
       </div>
     );
-  })()
-}
-
-{/* Incoming Request Details Modal */ }
-{
-  selectedIncomingRequest && (
+  })()}
+  {/* Incoming Request Details Modal */}
+  {selectedIncomingRequest && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
         <button onClick={() => setSelectedIncomingRequest(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors"><X size={20} /></button>
@@ -3261,12 +3276,9 @@ const Dashboard = () => {
         </div>
       </div>
     </div>
-  )
-}
-
-{/* Payment Simulation Modal */ }
-{
-  isPaymentModalOpen && selectedInvoiceToPay && (
+  )}
+  {/* Payment Simulation Modal */}
+  {isPaymentModalOpen && selectedInvoiceToPay && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
         <button onClick={() => setIsPaymentModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors"><X size={20} /></button>
@@ -3279,7 +3291,7 @@ const Dashboard = () => {
         <div className="space-y-4 mb-8">
           <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
             <span className="text-gray-600 font-medium text-sm">Invoice #</span>
-            <span className="font-bold text-gray-900 text-sm">{selectedInvoiceToPay.id?.substring(0, 8)?.toUpperCase() || 'N/A'}</span>
+            <span className="font-bold text-gray-900 text-sm font-mono">INV-{selectedInvoiceToPay.id?.substring(0, 8).toUpperCase() || 'N/A'}</span>
           </div>
 
           <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl border border-gray-100">
@@ -3319,11 +3331,9 @@ const Dashboard = () => {
         </div>
       </div>
     </div>
-  )
-}
-{/* Real-World Invoice View Modal */ }
-{
-  isInvoiceViewOpen && selectedInvoiceDetails && (
+  )}
+  {/* Real-World Invoice View Modal */}
+  {isInvoiceViewOpen && selectedInvoiceDetails && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl relative animate-fade-in flex flex-col">
 
@@ -3352,7 +3362,7 @@ const Dashboard = () => {
           <div className="flex justify-between items-start mb-12">
             <div>
               <h1 className="text-4xl font-black text-gray-900 tracking-tight">INVOICE</h1>
-              <p className="text-gray-500 mt-2 font-medium">#{selectedInvoiceDetails.id}</p>
+              <p className="text-gray-500 mt-2 font-medium font-mono">INV-{selectedInvoiceDetails.id?.substring(0, 8).toUpperCase()}</p>
             </div>
             <div className="text-right">
               <div className="text-2xl font-bold text-brand-orange flex items-center justify-end gap-2 mb-2">
@@ -3470,7 +3480,64 @@ const Dashboard = () => {
       </div>
     </div>
   )}
+
+  {/* Notification View Modal */}
+  {selectedNotification && (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <Bell size={24} className="text-brand-orange" />
+            Notification Details
+          </h2>
+          <button onClick={() => setSelectedNotification(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-8 flex flex-col gap-6">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">{selectedNotification.title || selectedNotification.referenceType}</h3>
+            {selectedNotification.createdAt && <p className="text-sm text-gray-500 mb-4">{new Date(selectedNotification.createdAt).toLocaleString()}</p>}
+            <div className="text-gray-800 text-base leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100 whitespace-pre-wrap">
+              {selectedNotification.message || selectedNotification.content}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-4">
+            {selectedNotification.referenceType === 'BOOKING_APPROVAL_REQUEST' && (
+              <>
+                <button onClick={async () => {
+                  try {
+                    await api.patch(`/bookings/${selectedNotification.referenceId}/status?status=APPROVED`);
+                    alert("Purchase approved successfully.");
+                    setSelectedNotification(null);
+                  } catch (err) {
+                    alert("Failed to approve purchase.");
+                  }
+                }} className="px-6 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-full font-semibold transition-colors">
+                  Approve
+                </button>
+                <button onClick={async () => {
+                  try {
+                    await api.patch(`/bookings/${selectedNotification.referenceId}/status?status=REJECTED`);
+                    alert("Purchase rejected.");
+                    setSelectedNotification(null);
+                  } catch (err) {
+                    alert("Failed to reject purchase.");
+                  }
+                }} className="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-full font-semibold transition-colors">
+                  Reject
+                </button>
+              </>
+            )}
+            <button onClick={() => setSelectedNotification(null)} className="px-6 py-2.5 bg-brand-orange hover:bg-orange-600 text-white rounded-full font-semibold transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+  )}
+  </div>
   </ErrorBoundary>
   );
 };

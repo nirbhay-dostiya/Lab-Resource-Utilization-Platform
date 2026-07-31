@@ -22,4 +22,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     // (useful to avoid LazyInitializationException during authentication)
     @Query("SELECT u FROM User u LEFT JOIN FETCH u.roles WHERE u.email = :email")
     Optional<User> findByEmailWithRoles(@Param("email") String email);
+
+    @Query("SELECT u FROM User u JOIN u.roles r WHERE r.name = :roleName")
+    java.util.List<User> findAllByRoleName(@Param("roleName") in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType roleName);
+
+    @Query("SELECT DISTINCT u FROM User u LEFT JOIN FETCH u.roles LEFT JOIN u.department d LEFT JOIN u.institution i WHERE (i.id = :institutionId OR d.institution.id = :institutionId)")
+    java.util.List<User> findAllByInstitutionId(@Param("institutionId") UUID institutionId);
 }

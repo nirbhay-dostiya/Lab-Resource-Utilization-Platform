@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.UUID;
 
 @RestController
@@ -42,8 +43,25 @@ public class BillingController {
         return ResponseEntity.ok(billingService.getInvoicesByDepartment(departmentId));
     }
 
-    @GetMapping("/invoices")
+    /**
+     * Returns invoices that involve the current user's institution —
+     * either as the PAYER or as the PROVIDER of equipment.
+     * SYSTEM_ADMIN sees all invoices.
+     */
+    @GetMapping("/invoices/my-institution")
     @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.List<InvoiceResponse>> getMyInstitutionInvoices(Principal principal) {
+        boolean isAdmin = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("SYSTEM_ADMIN"));
+        return ResponseEntity.ok(billingService.getInvoicesForMyInstitution(principal.getName(), isAdmin));
+    }
+
+    /**
+     * Admin-only: returns ALL invoices in the system.
+     */
+    @GetMapping("/invoices")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
     public ResponseEntity<java.util.List<InvoiceResponse>> getAllInvoices() {
         return ResponseEntity.ok(billingService.getAllInvoices());
     }
