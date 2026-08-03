@@ -238,7 +238,7 @@ public class BookingService {
                 .collect(Collectors.toList());
     }
 
-    private BookingResponse mapToResponse(Booking booking) {
+    public BookingResponse mapToResponse(Booking booking) {
         UUID invoiceId = null;
         BigDecimal totalAmount = null;
 

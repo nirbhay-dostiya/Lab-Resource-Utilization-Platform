@@ -175,7 +175,7 @@ public class EquipmentService {
         return mapToResponse(saved);
     }
 
-    private EquipmentResponse mapToResponse(Equipment equipment) {
+    public EquipmentResponse mapToResponse(Equipment equipment) {
         Set<String> tagNames = equipment.getTags().stream()
                 .map(Tag::getName)
                 .collect(Collectors.toSet());

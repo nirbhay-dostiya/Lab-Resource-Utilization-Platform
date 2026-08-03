@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Repository
 public interface EquipmentRepository extends JpaRepository<Equipment, UUID> {
@@ -39,4 +41,38 @@ public interface EquipmentRepository extends JpaRepository<Equipment, UUID> {
     // Custom query to fetch equipment with its associated tags initialized to prevent LazyInitializationException
     @Query("SELECT e FROM Equipment e LEFT JOIN FETCH e.tags WHERE e.id = :id")
     Optional<Equipment> findByIdWithTags(@Param("id") UUID id);
+
+    // Analytics: Global counts
+    long countByStatus(EquipmentStatus status);
+
+    // Analytics: Institution counts
+    @Query("SELECT COUNT(e) FROM Equipment e WHERE e.department.institution.id = :institutionId")
+    long countByDepartmentInstitutionId(@Param("institutionId") UUID institutionId);
+
+    @Query("SELECT COUNT(e) FROM Equipment e WHERE e.department.institution.id = :institutionId AND e.status = :status")
+    long countByDepartmentInstitutionIdAndStatus(@Param("institutionId") UUID institutionId, @Param("status") EquipmentStatus status);
+
+    // Analytics: Department counts
+    long countByDepartmentId(UUID departmentId);
+
+    long countByDepartmentIdAndStatus(UUID departmentId, EquipmentStatus status);
+
+    // Analytics Paginated Queries: Global
+    Page<Equipment> findByStatus(EquipmentStatus status, Pageable pageable);
+    @Query("SELECT e FROM Equipment e")
+    Page<Equipment> findAllEquipment(Pageable pageable);
+
+    // Analytics Paginated Queries: Institution
+    @Query("SELECT e FROM Equipment e WHERE e.department.institution.id = :institutionId")
+    Page<Equipment> findByDepartmentInstitutionId(@Param("institutionId") UUID institutionId, Pageable pageable);
+
+    @Query("SELECT e FROM Equipment e WHERE e.department.institution.id = :institutionId AND e.status = :status")
+    Page<Equipment> findByDepartmentInstitutionIdAndStatus(@Param("institutionId") UUID institutionId, @Param("status") EquipmentStatus status, Pageable pageable);
+
+    // Analytics Paginated Queries: Department
+    Page<Equipment> findByDepartmentId(UUID departmentId, Pageable pageable);
+
+    Page<Equipment> findByDepartmentIdAndStatus(UUID departmentId, EquipmentStatus status, Pageable pageable);
+
+
 }

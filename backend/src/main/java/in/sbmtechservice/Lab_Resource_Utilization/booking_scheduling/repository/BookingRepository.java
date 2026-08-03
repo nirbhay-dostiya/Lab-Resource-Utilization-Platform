@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, UUID> {
@@ -40,4 +42,50 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
     );
+
+    // Analytics: Global counts
+    long countByStatus(BookingStatus status);
+
+    @Query("SELECT b.equipment.name as equipmentName, COUNT(b) as count FROM Booking b GROUP BY b.equipment.name")
+    List<Object[]> countBookingsByEquipmentGlobal();
+
+    // Analytics: Institution counts
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.equipment.department.institution.id = :institutionId")
+    long countByEquipmentDepartmentInstitutionId(@Param("institutionId") UUID institutionId);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.equipment.department.institution.id = :institutionId AND b.status = :status")
+    long countByEquipmentDepartmentInstitutionIdAndStatus(@Param("institutionId") UUID institutionId, @Param("status") BookingStatus status);
+
+    @Query("SELECT b.equipment.name as equipmentName, COUNT(b) as count FROM Booking b WHERE b.equipment.department.institution.id = :institutionId GROUP BY b.equipment.name")
+    List<Object[]> countBookingsByEquipmentForInstitution(@Param("institutionId") UUID institutionId);
+
+    // Analytics: Department counts
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.equipment.department.id = :departmentId")
+    long countByEquipmentDepartmentId(@Param("departmentId") UUID departmentId);
+
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.equipment.department.id = :departmentId AND b.status = :status")
+    long countByEquipmentDepartmentIdAndStatus(@Param("departmentId") UUID departmentId, @Param("status") BookingStatus status);
+
+    @Query("SELECT b.equipment.name as equipmentName, COUNT(b) as count FROM Booking b WHERE b.equipment.department.id = :departmentId GROUP BY b.equipment.name")
+    List<Object[]> countBookingsByEquipmentForDepartment(@Param("departmentId") UUID departmentId);
+
+    // Analytics Paginated Queries: Global
+    Page<Booking> findByStatus(BookingStatus status, Pageable pageable);
+    @Query("SELECT b FROM Booking b")
+    Page<Booking> findAllBookings(Pageable pageable);
+
+    // Analytics Paginated Queries: Institution
+    @Query("SELECT b FROM Booking b WHERE b.equipment.department.institution.id = :institutionId")
+    Page<Booking> findByEquipmentDepartmentInstitutionId(@Param("institutionId") UUID institutionId, Pageable pageable);
+
+    @Query("SELECT b FROM Booking b WHERE b.equipment.department.institution.id = :institutionId AND b.status = :status")
+    Page<Booking> findByEquipmentDepartmentInstitutionIdAndStatus(@Param("institutionId") UUID institutionId, @Param("status") BookingStatus status, Pageable pageable);
+
+    // Analytics Paginated Queries: Department
+    @Query("SELECT b FROM Booking b WHERE b.equipment.department.id = :departmentId")
+    Page<Booking> findByEquipmentDepartmentId(@Param("departmentId") UUID departmentId, Pageable pageable);
+
+    @Query("SELECT b FROM Booking b WHERE b.equipment.department.id = :departmentId AND b.status = :status")
+    Page<Booking> findByEquipmentDepartmentIdAndStatus(@Param("departmentId") UUID departmentId, @Param("status") BookingStatus status, Pageable pageable);
+
 }

@@ -133,6 +133,17 @@ const Dashboard = () => {
   const [invoices, setInvoices] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [analyticsData, setAnalyticsData] = useState(null);
+
+  // Analytics Drill-Down Modal States
+  const [showAnalyticsDetailsModal, setShowAnalyticsDetailsModal] = useState(false);
+  const [analyticsDetailsType, setAnalyticsDetailsType] = useState(''); // 'equipment' or 'bookings'
+  const [analyticsDetailsTitle, setAnalyticsDetailsTitle] = useState('');
+  const [analyticsDetailsStatus, setAnalyticsDetailsStatus] = useState(null);
+  const [analyticsDetailsData, setAnalyticsDetailsData] = useState([]);
+  const [analyticsDetailsPage, setAnalyticsDetailsPage] = useState(0);
+  const [analyticsDetailsTotalPages, setAnalyticsDetailsTotalPages] = useState(0);
+  const [isFetchingAnalyticsDetails, setIsFetchingAnalyticsDetails] = useState(false);
+
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
@@ -300,14 +311,61 @@ const Dashboard = () => {
 
   const fetchAnalyticsData = async () => {
     try {
-      let endpoint = '/analytics/global';
-      if (selectedDepartment) endpoint = `/analytics/department/${selectedDepartment}`;
-      else if (selectedInstitution) endpoint = `/analytics/institution/${selectedInstitution}`;
+      let endpoint = '';
+      if (selectedDepartment) {
+        endpoint = `/analytics/department/${selectedDepartment}`;
+      } else if (selectedInstitution) {
+        endpoint = `/analytics/institution/${selectedInstitution}`;
+      } else if (isSystemAdmin) {
+        endpoint = '/analytics/global';
+      } else {
+        setAnalyticsData({ error: 'No institution or department selected for analytics.' });
+        return;
+      }
       const res = await api.get(endpoint);
       setAnalyticsData(res.data);
     } catch (err) {
       console.error("Failed to fetch analytics data", err);
+      setAnalyticsData({ error: err.response?.data?.message || err.message || 'Failed to fetch analytics data. Please check permissions.' });
     }
+  };
+
+  const fetchAnalyticsDetails = async (type, status, page = 0) => {
+    try {
+      setIsFetchingAnalyticsDetails(true);
+      let endpoint = '';
+      if (selectedDepartment) {
+        endpoint = `/analytics/department/${selectedDepartment}/${type}?page=${page}&size=10`;
+      } else if (selectedInstitution) {
+        endpoint = `/analytics/institution/${selectedInstitution}/${type}?page=${page}&size=10`;
+      } else if (isSystemAdmin) {
+        endpoint = `/analytics/global/${type}?page=${page}&size=10`;
+      } else {
+        return;
+      }
+      if (status) {
+        endpoint += `&status=${status}`;
+      }
+      
+      const res = await api.get(endpoint);
+      setAnalyticsDetailsData(res.data.content);
+      setAnalyticsDetailsTotalPages(res.data.totalPages);
+      setAnalyticsDetailsPage(res.data.number);
+    } catch (err) {
+      console.error("Failed to fetch analytics details", err);
+      toast.error(err.response?.data?.message || "Failed to fetch details.");
+    } finally {
+      setIsFetchingAnalyticsDetails(false);
+    }
+  };
+
+  const openAnalyticsDetails = (title, type, status) => {
+    setAnalyticsDetailsTitle(title);
+    setAnalyticsDetailsType(type);
+    setAnalyticsDetailsStatus(status);
+    setAnalyticsDetailsPage(0);
+    setShowAnalyticsDetailsModal(true);
+    fetchAnalyticsDetails(type, status, 0);
   };
 
   const fetchNotifications = async () => {
@@ -2742,22 +2800,39 @@ const Dashboard = () => {
             Analytics Summary
           </h2>
           {analyticsData ? (
+            analyticsData.error ? (
+              <div className="flex justify-center items-center h-48 bg-red-50 rounded-2xl border border-red-100">
+                <span className="text-red-500 font-medium">{analyticsData.error}</span>
+              </div>
+            ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-bold text-blue-600 mb-2">{analyticsData.totalEquipment}</span>
+                <div 
+                  className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                  onClick={() => openAnalyticsDetails('Total Equipment', 'equipment', null)}
+                >
+                  <span className="text-4xl font-bold text-blue-600 mb-2">{analyticsData.totalEquipment || 0}</span>
                   <span className="text-sm font-medium text-blue-800">Total Equipment</span>
                 </div>
-                <div className="bg-yellow-50 p-6 rounded-2xl border border-yellow-100 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-bold text-yellow-600 mb-2">{analyticsData.underMaintenance}</span>
+                <div 
+                  className="bg-yellow-50 p-6 rounded-2xl border border-yellow-100 flex flex-col items-center justify-center cursor-pointer hover:bg-yellow-100 hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                  onClick={() => openAnalyticsDetails('Under Maintenance', 'equipment', 'UNDER_MAINTENANCE')}
+                >
+                  <span className="text-4xl font-bold text-yellow-600 mb-2">{analyticsData.underMaintenance || 0}</span>
                   <span className="text-sm font-medium text-yellow-800">Under Maintenance</span>
                 </div>
-                <div className="bg-green-50 p-6 rounded-2xl border border-green-100 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-bold text-green-600 mb-2">{analyticsData.totalBookings}</span>
+                <div 
+                  className="bg-green-50 p-6 rounded-2xl border border-green-100 flex flex-col items-center justify-center cursor-pointer hover:bg-green-100 hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                  onClick={() => openAnalyticsDetails('Total Bookings', 'bookings', null)}
+                >
+                  <span className="text-4xl font-bold text-green-600 mb-2">{analyticsData.totalBookings || 0}</span>
                   <span className="text-sm font-medium text-green-800">Total Bookings</span>
                 </div>
-                <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-bold text-purple-600 mb-2">{analyticsData.pendingApprovals}</span>
+                <div 
+                  className="bg-purple-50 p-6 rounded-2xl border border-purple-100 flex flex-col items-center justify-center cursor-pointer hover:bg-purple-100 hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                  onClick={() => openAnalyticsDetails('Pending Approvals', 'bookings', 'PENDING')}
+                >
+                  <span className="text-4xl font-bold text-purple-600 mb-2">{analyticsData.pendingApprovals || 0}</span>
                   <span className="text-sm font-medium text-purple-800">Pending Approvals</span>
                 </div>
               </div>
@@ -2775,13 +2850,14 @@ const Dashboard = () => {
                     {Object.entries(analyticsData.bookingsByEquipment || {}).map(([name, count]) => (
                       <tr key={name} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                         <td className="py-4 font-medium text-gray-800">{name}</td>
-                        <td className="py-4 text-gray-600 font-bold text-right">{count}</td>
+                        <td className="py-4 text-gray-600 font-bold text-right">{String(count)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </>
+            )
           ) : (
             <div className="flex justify-center items-center h-48">
               <Loader2 className="animate-spin text-brand-orange w-8 h-8" />
@@ -3605,6 +3681,112 @@ const Dashboard = () => {
       </div>
     </div>
   )}
+  {/* Analytics Drill-Down Details Modal */}
+  {showAnalyticsDetailsModal && (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-fade-in" onClick={(e) => { if (e.target === e.currentTarget) setShowAnalyticsDetailsModal(false); }}>
+      <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col transform transition-all">
+        <div className="p-6 md:p-8 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 flex justify-between items-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-orange/5 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">{analyticsDetailsTitle} Details</h2>
+            <p className="text-gray-500 text-sm mt-1">Detailed list for your selected analytics criteria.</p>
+          </div>
+          <button onClick={() => setShowAnalyticsDetailsModal(false)} className="text-gray-400 hover:text-gray-600 bg-white hover:bg-gray-100 p-2 rounded-full transition-colors border border-gray-100 shadow-sm relative z-10">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <div className="p-6 md:p-8 space-y-6 flex-1 overflow-y-auto max-h-[70vh]">
+          {isFetchingAnalyticsDetails ? (
+            <div className="flex justify-center items-center h-48">
+              <Loader2 className="animate-spin text-brand-orange w-8 h-8" />
+            </div>
+          ) : analyticsDetailsData.length === 0 ? (
+            <div className="flex justify-center items-center h-48 bg-gray-50 rounded-2xl border border-gray-100">
+              <span className="text-gray-500 font-medium">No records found.</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-500 uppercase">
+                    {analyticsDetailsType === 'equipment' ? (
+                      <>
+                        <th className="pb-3 font-semibold">Name</th>
+                        <th className="pb-3 font-semibold">Model</th>
+                        <th className="pb-3 font-semibold">Status</th>
+                        <th className="pb-3 font-semibold">Price/Hr</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="pb-3 font-semibold">Equipment</th>
+                        <th className="pb-3 font-semibold">User</th>
+                        <th className="pb-3 font-semibold">Status</th>
+                        <th className="pb-3 font-semibold">Amount</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {analyticsDetailsData.map(item => (
+                    <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                      {analyticsDetailsType === 'equipment' ? (
+                        <>
+                          <td className="py-4 font-medium text-gray-800">{item.name}</td>
+                          <td className="py-4 text-gray-600">{item.modelNumber}</td>
+                          <td className="py-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
+                              {item.status}
+                            </span>
+                          </td>
+                          <td className="py-4 font-medium text-gray-900">₹{item.pricePerHour}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-4 font-medium text-gray-800">{item.equipmentName}</td>
+                          <td className="py-4 text-gray-600">{item.userName}</td>
+                          <td className="py-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
+                              {item.status}
+                            </span>
+                          </td>
+                          <td className="py-4 font-medium text-gray-900">₹{item.totalAmount || 0}</td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Pagination Controls */}
+        {!isFetchingAnalyticsDetails && analyticsDetailsTotalPages > 1 && (
+          <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+            <button 
+              disabled={analyticsDetailsPage === 0}
+              onClick={() => fetchAnalyticsDetails(analyticsDetailsType, analyticsDetailsStatus, analyticsDetailsPage - 1)}
+              className="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-600 font-medium">
+              Page {analyticsDetailsPage + 1} of {analyticsDetailsTotalPages}
+            </span>
+            <button 
+              disabled={analyticsDetailsPage >= analyticsDetailsTotalPages - 1}
+              onClick={() => fetchAnalyticsDetails(analyticsDetailsType, analyticsDetailsStatus, analyticsDetailsPage + 1)}
+              className="px-5 py-2 text-sm font-medium text-white bg-brand-orange border border-transparent rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )}
+
   </div>
   </ErrorBoundary>
   );
