@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar, MoreVertical, LayoutDashboard, Activity, CheckCircle, Wrench, Clock, FileText, ShoppingCart, X, Bell, Search } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import api from '../api/axios';
 
 class ErrorBoundary extends React.Component {
@@ -112,7 +112,9 @@ const Dashboard = () => {
 
   // Utilization & Shared Resources State
   const [heatmapData, setHeatmapData] = useState([]);
+  const [performanceData, setPerformanceData] = useState({ top: [], bottom: [] });
   const [isFetchingHeatmap, setIsFetchingHeatmap] = useState(false);
+  const [isFetchingPerformance, setIsFetchingPerformance] = useState(false);
   const [sharedResources, setSharedResources] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [isFetchingShared, setIsFetchingShared] = useState(false);
@@ -144,6 +146,19 @@ const Dashboard = () => {
   const [analyticsDetailsTotalPages, setAnalyticsDetailsTotalPages] = useState(0);
   const [isFetchingAnalyticsDetails, setIsFetchingAnalyticsDetails] = useState(false);
 
+  // Dashboard KPI Drill-Down Modal States
+  const [showKpiModal, setShowKpiModal] = useState(false);
+  const [kpiModalTitle, setKpiModalTitle] = useState('');
+  const [kpiModalData, setKpiModalData] = useState([]);
+  const [kpiModalType, setKpiModalType] = useState(''); // 'equipment' | 'bookings' | 'maintenance' | 'pending'
+  const [kpiModalAuthorized, setKpiModalAuthorized] = useState(true);
+
+  // Bookings filter & pagination state
+  const [bookingFilterStatus, setBookingFilterStatus] = useState('ALL');
+  const [bookingSearchQuery, setBookingSearchQuery] = useState('');
+  const [bookingCurrentPage, setBookingCurrentPage] = useState(0);
+  const BOOKING_PAGE_SIZE = 10;
+
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
@@ -157,6 +172,13 @@ const Dashboard = () => {
   const [selectedInvoiceDetails, setSelectedInvoiceDetails] = useState(null);
   const [isInvoiceViewOpen, setIsInvoiceViewOpen] = useState(false);
 
+  // Billing pagination & filter state
+  const [invoiceCurrentPage, setInvoiceCurrentPage] = useState(0);
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('ALL');
+  const [billingInstitutionFilter, setBillingInstitutionFilter] = useState('');
+  const [txCurrentPage, setTxCurrentPage] = useState(0);
+  const INVOICE_PAGE_SIZE = 10;
+  const TX_PAGE_SIZE = 10;
   const [selectedTransactionDetails, setSelectedTransactionDetails] = useState(null);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
 
@@ -207,6 +229,7 @@ const Dashboard = () => {
     }
     if (activeSection === 'utilization') {
       fetchHeatmapData();
+      fetchPerformanceData();
     }
     if (activeSection === 'shared_resources') {
       fetchSharedResources();
@@ -301,13 +324,25 @@ const Dashboard = () => {
   };
 
   const filteredInvoices = (Array.isArray(invoices) ? invoices : []).filter(inv => {
+    // Institution filter (system admin only)
+    if (billingInstitutionFilter && inv?.billedToInstitutionName !== billingInstitutionFilter) return false;
+    // Status filter
+    if (invoiceStatusFilter !== 'ALL' && inv?.status !== invoiceStatusFilter) return false;
+    // Text search
     if (!invoiceSearchQuery) return true;
     const q = invoiceSearchQuery.toLowerCase();
     return (
       inv?.id?.toLowerCase()?.includes(q) ||
-      inv?.lineItems?.some(li => li?.equipmentName?.toLowerCase()?.includes(q) || li?.description?.toLowerCase()?.includes(q))
+      inv?.lineItems?.some(li => li?.equipmentName?.toLowerCase()?.includes(q) || li?.description?.toLowerCase()?.includes(q)) ||
+      inv?.userEmail?.toLowerCase()?.includes(q) ||
+      inv?.userName?.toLowerCase()?.includes(q)
     );
   });
+
+  // All transactions across all filtered invoices
+  const allTransactions = filteredInvoices
+    .flatMap(inv => (Array.isArray(inv?.transactions) ? inv.transactions : []).map(t => ({ ...t, invoiceId: inv?.id, invoiceAmount: inv?.totalAmount })))
+    .sort((a, b) => new Date(b?.transactionDate || 0) - new Date(a?.transactionDate || 0));
 
   const fetchAnalyticsData = async () => {
     try {
@@ -461,6 +496,23 @@ const Dashboard = () => {
       console.error("Failed to fetch heatmap data", err);
     } finally {
       setIsFetchingHeatmap(false);
+    }
+  };
+
+  const fetchPerformanceData = async () => {
+    setIsFetchingPerformance(true);
+    try {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 7);
+      const res = await api.get(`/v1/utilization-analytics/performance?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+      if (res.data) {
+        setPerformanceData(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch performance data", err);
+    } finally {
+      setIsFetchingPerformance(false);
     }
   };
 
@@ -1047,14 +1099,20 @@ const Dashboard = () => {
           <FileText size={20} />
           <span>Billing & Invoices</span>
         </button>
-        <button onClick={() => setActiveSection('analytics')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'analytics' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
-          <Activity size={20} />
-          <span>Analytics</span>
-        </button>
-        <button onClick={() => setActiveSection('utilization')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'utilization' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
-          <Activity size={20} />
-          <span>Utilization Analytics</span>
-        </button>
+        {(isSystemAdmin || hasRole('INSTITUTION_ADMIN')) && (
+          <>
+            <button onClick={() => setActiveSection('analytics')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'analytics' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
+              <Activity size={20} />
+              <span>Analytics</span>
+            </button>
+          </>
+        )}
+        {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER')) && (
+          <button onClick={() => setActiveSection('utilization')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'utilization' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
+            <Activity size={20} />
+            <span>Utilization Analytics</span>
+          </button>
+        )}
       </>
     )}
 
@@ -1309,29 +1367,65 @@ const Dashboard = () => {
               <Activity size={28} className="text-brand-orange" />
               Utilization Analytics
             </h2>
+            <div className="text-sm font-medium text-gray-500 bg-white px-4 py-2 rounded-xl border border-gray-100 shadow-sm">
+              Last 7 Days
+            </div>
+          </div>
+
+          {/* Top KPIs */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col relative overflow-hidden group">
+              <div className="absolute -right-6 -top-6 bg-orange-50 w-24 h-24 rounded-full opacity-50 group-hover:scale-110 transition-transform duration-300"></div>
+              <div className="text-gray-500 text-sm font-medium mb-1">Overall Utilization</div>
+              <div className="text-4xl font-bold text-gray-800 flex items-baseline gap-2">
+                {heatmapData.length > 0 ? (heatmapData.reduce((acc, curr) => acc + (curr?.avgUtilizationRate || 0), 0) / heatmapData.length).toFixed(1) : 0}%
+                <span className="text-xs font-semibold text-green-500 bg-green-50 px-2 py-1 rounded-full">+2%</span>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col relative overflow-hidden group">
+              <div className="absolute -right-6 -top-6 bg-blue-50 w-24 h-24 rounded-full opacity-50 group-hover:scale-110 transition-transform duration-300"></div>
+              <div className="text-gray-500 text-sm font-medium mb-1">Total Wasted (Idle) Hours</div>
+              <div className="text-4xl font-bold text-gray-800">
+                {heatmapData.length > 0 ? (heatmapData.reduce((acc, curr) => acc + (curr?.totalIdleMinutes || 0), 0) / 60).toFixed(1) : 0} <span className="text-lg">hrs</span>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col relative overflow-hidden group">
+               <div className="absolute -right-6 -top-6 bg-green-50 w-24 h-24 rounded-full opacity-50 group-hover:scale-110 transition-transform duration-300"></div>
+               <div className="text-gray-500 text-sm font-medium mb-1">Efficiency Score</div>
+               <div className="text-4xl font-bold text-gray-800">
+                 {heatmapData.length > 0 ? Math.min(100, Math.max(0, 100 - (heatmapData.reduce((acc, curr) => acc + (curr?.totalIdleMinutes || 0), 0) / 60 / 10))).toFixed(0) : 0}
+                 <span className="text-lg text-gray-500">/100</span>
+               </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Chart */}
             <div className="lg:col-span-2 bg-white rounded-3xl p-8 shadow-sm border border-gray-100 relative">
               <h3 className="font-semibold text-gray-800 mb-6 flex items-center gap-2">
-                <Activity size={18} /> Daily Utilization Rates (Last 7 Days)
+                <Activity size={18} /> Booking vs Actual Usage
               </h3>
               {isFetchingHeatmap ? (
                 <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-brand-orange" /></div>
               ) : heatmapData.length > 0 ? (
                 <div className="h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={heatmapData.map(d => ({ date: d.recordDate, utilization: d.utilizationRate, idle: d.idleMinutes }))}>
+                    <ComposedChart data={heatmapData.map(d => ({ date: d?.recordDate || '', booked: (d?.totalBookedMinutes || 0) / 60, used: (d?.totalUsedMinutes || 0) / 60, avgUtil: d?.avgUtilizationRate || 0 }))}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dx={-10} />
+                      <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dx={-10} label={{ value: 'Hours', angle: -90, position: 'insideLeft', fill: '#9CA3AF' }} />
+                      <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dx={10} label={{ value: 'Util %', angle: 90, position: 'insideRight', fill: '#9CA3AF' }} />
                       <Tooltip
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         cursor={{ fill: '#F3F4F6' }}
                       />
-                      <Bar dataKey="utilization" name="Utilization %" fill="#f97316" radius={[4, 4, 0, 0]} barSize={30} />
-                    </BarChart>
+                      <Legend verticalAlign="top" height={36}/>
+                      <Bar yAxisId="left" dataKey="booked" name="Booked (Hrs)" fill="#E5E7EB" radius={[4, 4, 0, 0]} barSize={40} />
+                      <Bar yAxisId="left" dataKey="used" name="Actual Used (Hrs)" fill="#f97316" radius={[4, 4, 0, 0]} barSize={40} />
+                      <Line yAxisId="right" type="monotone" dataKey="avgUtil" name="Avg Utilization %" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               ) : (
@@ -1341,25 +1435,60 @@ const Dashboard = () => {
               )}
             </div>
 
-            {/* Metrics */}
+            {/* Leaderboards */}
             <div className="flex flex-col gap-6">
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center h-full">
-                <div className="bg-orange-50 p-4 rounded-full text-brand-orange mb-4">
-                  <Activity size={32} />
-                </div>
-                <div className="text-gray-500 text-sm font-medium mb-1">Avg Utilization</div>
-                <div className="text-4xl font-bold text-gray-800">
-                  {heatmapData.length > 0 ? (heatmapData.reduce((acc, curr) => acc + curr.utilizationRate, 0) / heatmapData.length).toFixed(1) : 0}%
-                </div>
+              {/* Top Performers */}
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col h-full">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Activity size={18} className="text-green-500" /> Highest Utilization
+                </h3>
+                {isFetchingPerformance ? (
+                   <div className="flex justify-center items-center flex-1"><Loader2 size={24} className="animate-spin text-brand-orange" /></div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {performanceData?.top?.map((item, idx) => (
+                      <div key={item?.equipmentId || idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                         <div className="flex items-center gap-3">
+                            <span className="text-gray-400 font-bold text-sm">#{idx + 1}</span>
+                            <span className="font-semibold text-sm text-gray-700 truncate w-32">{item?.equipmentName || 'Unknown'}</span>
+                         </div>
+                         <div className="font-bold text-green-600">{Number(item?.avgUtilizationRate || 0).toFixed(1)}%</div>
+                      </div>
+                    ))}
+                    {(!performanceData?.top || performanceData.top.length === 0) && (
+                      <div className="text-sm text-gray-500 text-center py-4">No data available</div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center h-full">
-                <div className="bg-blue-50 p-4 rounded-full text-blue-500 mb-4">
-                  <Clock size={32} />
-                </div>
-                <div className="text-gray-500 text-sm font-medium mb-1">Avg Idle Time</div>
-                <div className="text-4xl font-bold text-gray-800">
-                  {heatmapData.length > 0 ? Math.round(heatmapData.reduce((acc, curr) => acc + curr.idleMinutes, 0) / heatmapData.length) : 0} <span className="text-lg">mins</span>
-                </div>
+
+              {/* Bottom Performers */}
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col h-full">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Activity size={18} className="text-red-500" /> Lowest Utilization
+                </h3>
+                {isFetchingPerformance ? (
+                   <div className="flex justify-center items-center flex-1"><Loader2 size={24} className="animate-spin text-brand-orange" /></div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {performanceData?.bottom?.map((item, idx) => (
+                      <div key={item?.equipmentId || idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl group relative overflow-hidden">
+                         <div className="absolute inset-0 bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                         <div className="flex items-center gap-3 relative z-10">
+                            <span className="text-gray-400 font-bold text-sm">#{idx + 1}</span>
+                            <span className="font-semibold text-sm text-gray-700 truncate w-32">{item?.equipmentName || 'Unknown'}</span>
+                         </div>
+                         <div className="flex flex-col items-end relative z-10">
+                           <span className="font-bold text-red-500">{Number(item?.avgUtilizationRate || 0).toFixed(1)}%</span>
+                           <span className="text-[10px] text-gray-500 font-medium">Idle: {Math.round(Number(item?.totalIdleMinutes || 0)/60)}h</span>
+                         </div>
+                      </div>
+                    ))}
+                    {(!performanceData?.bottom || performanceData.bottom.length === 0) && (
+                      <div className="text-sm text-gray-500 text-center py-4">No data available</div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1552,37 +1681,94 @@ const Dashboard = () => {
         <div className="flex flex-col gap-6 animate-fade-in">
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-              <div className="bg-blue-50 p-4 rounded-xl text-blue-600"><Server size={24} /></div>
-              <div>
+            {/* Total Equipment Card */}
+            <div
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+              onClick={() => {
+                const isAuthorized = isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER');
+                const relevantEquipment = isSystemAdmin ? equipmentList : equipmentList.filter(e => e.institutionId === user?.institutionId);
+                setKpiModalTitle('Total Equipment');
+                setKpiModalType('equipment');
+                setKpiModalData(relevantEquipment);
+                setKpiModalAuthorized(isAuthorized);
+                setShowKpiModal(true);
+              }}
+              title="Click to view equipment details"
+            >
+              <div className="bg-blue-50 p-4 rounded-xl text-blue-600 group-hover:bg-blue-100 transition-colors"><Server size={24} /></div>
+              <div className="flex-1">
                 <div className="text-gray-500 text-sm font-medium">Total Equipment</div>
                 <div className="text-2xl font-bold text-gray-800">{dashboardStats.totalEquipment}</div>
               </div>
+              <ExternalLink size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
             </div>
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-              <div className="bg-green-50 p-4 rounded-xl text-green-600"><Calendar size={24} /></div>
-              <div>
+
+            {/* Today's Bookings Card */}
+            <div
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+              onClick={() => {
+                const isAuthorized = isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER');
+                const today = new Date().toDateString();
+                const todayBookings = bookingsList.filter(b => new Date(b.startTime).toDateString() === today);
+                setKpiModalTitle("Today's Bookings");
+                setKpiModalType('bookings');
+                setKpiModalData(todayBookings);
+                setKpiModalAuthorized(isAuthorized);
+                setShowKpiModal(true);
+              }}
+              title="Click to view today's bookings"
+            >
+              <div className="bg-green-50 p-4 rounded-xl text-green-600 group-hover:bg-green-100 transition-colors"><Calendar size={24} /></div>
+              <div className="flex-1">
                 <div className="text-gray-500 text-sm font-medium">Today's Bookings</div>
                 <div className="text-2xl font-bold text-gray-800">{dashboardStats.todaysBookings}</div>
               </div>
+              <ExternalLink size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
             </div>
+
+            {/* Pending Approvals Card */}
             <div
-              className={`bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 ${isSystemAdmin ? 'cursor-pointer hover:bg-gray-50 transition-colors' : ''}`}
-              onClick={() => { if (isSystemAdmin) setActiveSection('institutions'); }}
-              title={isSystemAdmin ? "Click to view pending institutions" : ""}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+              onClick={() => {
+                const isAuthorized = isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER');
+                const pendingBookings = bookingsList.filter(b => b.status === 'PENDING');
+                setKpiModalTitle('Pending Approvals');
+                setKpiModalType('pending');
+                setKpiModalData(pendingBookings);
+                setKpiModalAuthorized(isAuthorized);
+                setShowKpiModal(true);
+              }}
+              title="Click to view pending approvals"
             >
-              <div className="bg-amber-50 p-4 rounded-xl text-amber-600"><Activity size={24} /></div>
-              <div>
+              <div className="bg-amber-50 p-4 rounded-xl text-amber-600 group-hover:bg-amber-100 transition-colors"><Activity size={24} /></div>
+              <div className="flex-1">
                 <div className="text-gray-500 text-sm font-medium">Pending Approvals</div>
                 <div className="text-2xl font-bold text-gray-800">{dashboardStats.pendingApprovals}</div>
               </div>
+              <ExternalLink size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
             </div>
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-              <div className="bg-red-50 p-4 rounded-xl text-red-600"><Wrench size={24} /></div>
-              <div>
+
+            {/* Under Maintenance Card */}
+            <div
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+              onClick={() => {
+                const isAuthorized = isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER');
+                const relevantEquipment = isSystemAdmin ? equipmentList : equipmentList.filter(e => e.institutionId === user?.institutionId);
+                const maintenanceEquipment = relevantEquipment.filter(e => e.status === 'UNDER_MAINTENANCE');
+                setKpiModalTitle('Under Maintenance');
+                setKpiModalType('maintenance');
+                setKpiModalData(maintenanceEquipment);
+                setKpiModalAuthorized(isAuthorized);
+                setShowKpiModal(true);
+              }}
+              title="Click to view maintenance details"
+            >
+              <div className="bg-red-50 p-4 rounded-xl text-red-600 group-hover:bg-red-100 transition-colors"><Wrench size={24} /></div>
+              <div className="flex-1">
                 <div className="text-gray-500 text-sm font-medium">Under Maintenance</div>
                 <div className="text-2xl font-bold text-gray-800">{dashboardStats.underMaintenance}</div>
               </div>
+              <ExternalLink size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
             </div>
           </div>
 
@@ -1615,75 +1801,161 @@ const Dashboard = () => {
             </div>
           </div>
 
+          {/* Bookings Filter Bar */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <Search size={16} className="text-gray-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Search by user or equipment..."
+                value={bookingSearchQuery}
+                onChange={(e) => { setBookingSearchQuery(e.target.value); setBookingCurrentPage(0); }}
+                className="w-full text-sm outline-none text-gray-700 placeholder-gray-400"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {['ALL', 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map(status => (
+                <button
+                  key={status}
+                  onClick={() => { setBookingFilterStatus(status); setBookingCurrentPage(0); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    bookingFilterStatus === status
+                      ? 'bg-brand-orange text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {status === 'ALL' ? 'All Statuses' : status.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="recent-bookings">
-            {/* Recent Bookings Table */}
+            {/* Bookings Table */}
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2"><Calendar size={18} /> Recent Bookings</h3>
               {isFetchingBookings ? (
                 <div className="flex justify-center p-8"><Loader2 size={32} className="animate-spin text-brand-orange" /></div>
-              ) : bookingsList.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse whitespace-nowrap">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500">
-                        <th className="pb-3 pr-4 font-medium">User</th>
-                        <th className="pb-3 px-4 font-medium">Resource</th>
-                        <th className="pb-3 px-4 font-medium">Time Slot</th>
-                        <th className="pb-3 px-4 font-medium">Status</th>
-                        <th className="pb-3 pl-4 font-medium">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bookingsList.map(b => (
-                        <tr key={b.id} onClick={() => setSelectedBookingDetails(b)} className="cursor-pointer border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                          <td className="py-3 pr-4 font-medium text-gray-800 text-sm">{b.userName}</td>
-                          <td className="py-3 px-4 text-gray-600 text-sm">{b.equipmentName}</td>
-                          <td className="py-3 px-4 text-gray-500 text-xs">
-                            {new Date(b.startTime).toLocaleDateString()} {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-1 rounded text-[11px] font-bold tracking-wide ${b.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : b.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : b.status === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {b.status}
-                            </span>
-                          </td>
-                          <td className="py-3 pl-4" onClick={(e) => e.stopPropagation()}>
-                            {(!isSystemAdmin && (hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER')) && b.equipmentInstitutionId === user?.institutionId) ? (
-                              <select
-                                className="border border-gray-200 rounded px-2 py-1 text-xs bg-white text-gray-700 focus:outline-none focus:border-brand-orange"
-                                value={b.status}
-                                onChange={(e) => handleUpdateBookingStatus(b.id, e.target.value)}
-                              >
-                                <option value="PENDING">Pending</option>
-                                <option value="CONFIRMED">Confirmed</option>
-                                <option value="IN_USE">In Use</option>
-                                <option value="COMPLETED">Completed</option>
-                                <option value="CANCELLED">Cancelled</option>
-                                <option value="NO_SHOW">No Show</option>
-                              </select>
-                            ) : b.userId === user?.id && !['CANCELLED', 'COMPLETED'].includes(b.status) ? (
+              ) : (() => {
+                const filtered = bookingsList
+                  .filter(b => bookingFilterStatus === 'ALL' || b.status === bookingFilterStatus)
+                  .filter(b => {
+                    const q = bookingSearchQuery.toLowerCase();
+                    return !q || (b.userName || '').toLowerCase().includes(q) || (b.equipmentName || '').toLowerCase().includes(q);
+                  });
+                const totalPages = Math.ceil(filtered.length / BOOKING_PAGE_SIZE);
+                const paginated = filtered.slice(bookingCurrentPage * BOOKING_PAGE_SIZE, (bookingCurrentPage + 1) * BOOKING_PAGE_SIZE);
+                return filtered.length > 0 ? (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse whitespace-nowrap">
+                        <thead>
+                          <tr className="border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500">
+                            <th className="pb-3 pr-4 font-medium">User</th>
+                            <th className="pb-3 px-4 font-medium">Resource</th>
+                            <th className="pb-3 px-4 font-medium">Time Slot</th>
+                            <th className="pb-3 px-4 font-medium">Status</th>
+                            <th className="pb-3 pl-4 font-medium">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginated.map(b => (
+                            <tr key={b.id} onClick={() => setSelectedBookingDetails(b)} className="cursor-pointer border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                              <td className="py-3 pr-4 font-medium text-gray-800 text-sm">{b.userName}</td>
+                              <td className="py-3 px-4 text-gray-600 text-sm">{b.equipmentName}</td>
+                              <td className="py-3 px-4 text-gray-500 text-xs">
+                                {new Date(b.startTime).toLocaleDateString()} {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`px-2 py-1 rounded text-[11px] font-bold tracking-wide ${b.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : b.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : b.status === 'CANCELLED' ? 'bg-red-100 text-red-700' : b.status === 'COMPLETED' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                                  {b.status}
+                                </span>
+                              </td>
+                              <td className="py-3 pl-4" onClick={(e) => e.stopPropagation()}>
+                                {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER')) && b.status === 'PENDING' ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => handleUpdateBookingStatus(b.id, 'CONFIRMED')}
+                                      className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-semibold transition-colors flex items-center gap-1"
+                                      title="Approve booking"
+                                    >
+                                      <CheckCircle size={12} /> Approve
+                                    </button>
+                                    <button
+                                      onClick={() => { if(window.confirm('Reject this booking request?')) handleUpdateBookingStatus(b.id, 'CANCELLED'); }}
+                                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-semibold transition-colors flex items-center gap-1"
+                                      title="Reject booking"
+                                    >
+                                      <X size={12} /> Reject
+                                    </button>
+                                  </div>
+                                ) : (isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER')) && ['CONFIRMED', 'IN_USE'].includes(b.status) ? (
+                                  <select
+                                    className="border border-gray-200 rounded px-2 py-1 text-xs bg-white text-gray-700 focus:outline-none focus:border-brand-orange"
+                                    value={b.status}
+                                    onChange={(e) => handleUpdateBookingStatus(b.id, e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <option value="CONFIRMED">Confirmed</option>
+                                    <option value="IN_USE">In Use</option>
+                                    <option value="COMPLETED">Completed</option>
+                                    <option value="NO_SHOW">No Show</option>
+                                  </select>
+                                ) : b.userId === user?.id && !['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(b.status) ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); if (window.confirm('Cancel this booking?')) handleUpdateBookingStatus(b.id, 'CANCELLED'); }}
+                                    className="text-red-600 hover:text-red-800 text-xs font-medium bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors border border-red-200"
+                                  >
+                                    Cancel
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                        <span className="text-xs text-gray-500">
+                          Showing {bookingCurrentPage * BOOKING_PAGE_SIZE + 1}–{Math.min((bookingCurrentPage + 1) * BOOKING_PAGE_SIZE, filtered.length)} of {filtered.length}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            disabled={bookingCurrentPage === 0}
+                            onClick={() => setBookingCurrentPage(p => p - 1)}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >← Prev</button>
+                          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                            const page = totalPages <= 5 ? i : Math.max(0, Math.min(bookingCurrentPage - 2, totalPages - 5)) + i;
+                            return (
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm('Are you sure you want to cancel this booking?')) {
-                                    handleUpdateBookingStatus(b.id, 'CANCELLED');
-                                  }
-                                }}
-                                className="text-red-600 hover:text-red-800 text-xs font-medium bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors border border-red-200"
-                              >
-                                Cancel Booking
-                              </button>
-                            ) : (
-                              <span className="text-gray-400 text-xs font-medium">View Only</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center p-8 text-gray-500 text-sm">No recent bookings found.</div>
-              )}
+                                key={page}
+                                onClick={() => setBookingCurrentPage(page)}
+                                className={`w-8 h-8 text-xs font-semibold rounded-lg transition-colors ${
+                                  bookingCurrentPage === page ? 'bg-brand-orange text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                              >{page + 1}</button>
+                            );
+                          })}
+                          <button
+                            disabled={bookingCurrentPage >= totalPages - 1}
+                            onClick={() => setBookingCurrentPage(p => p + 1)}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >Next →</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center p-8 text-gray-500 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    {bookingSearchQuery || bookingFilterStatus !== 'ALL' ? 'No bookings match your filters.' : 'No recent bookings found.'}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Activity Feed */}
@@ -2628,85 +2900,157 @@ const Dashboard = () => {
       )}
 
       {activeSection === 'billing' && (
-        <section className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 animate-fade-in relative">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-            <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
-              <FileText size={24} className="text-brand-orange" />
-              Invoices
-            </h2>
-            <div className="relative w-full sm:w-64">
-              <input
-                type="text"
-                placeholder="Search by ID or Equipment..."
-                value={invoiceSearchQuery}
-                onChange={(e) => setInvoiceSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-brand-orange text-sm transition-colors"
-              />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+        <section className="flex flex-col gap-6 animate-fade-in">
+
+          {/* Billing Header */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
+                  <FileText size={24} className="text-brand-orange" />
+                  {isSystemAdmin ? 'Platform Billing Overview' : 'Billing & Invoices'}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isSystemAdmin ? 'Read-only view of all platform invoices and transactions.' : 'View your invoices and payment history.'}
+                </p>
+              </div>
+              {isSystemAdmin && (
+                <div className="flex items-center gap-2 text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-xl">
+                  <Shield size={14} /> Admin View — Payments are managed by institution members
+                </div>
+              )}
+            </div>
+
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center gap-3 mt-5 pt-5 border-t border-gray-100">
+              {/* Institution filter (System Admin only) */}
+              {isSystemAdmin && (
+                <select
+                  value={billingInstitutionFilter}
+                  onChange={(e) => { setBillingInstitutionFilter(e.target.value); setInvoiceCurrentPage(0); }}
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-brand-orange bg-white min-w-[180px]"
+                >
+                  <option value="">All Institutions</option>
+                  {institutions.map(inst => (
+                    <option key={inst.id} value={inst.name}>{inst.name}</option>
+                  ))}
+                </select>
+              )}
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search by ID, equipment, or user..."
+                  value={invoiceSearchQuery}
+                  onChange={(e) => { setInvoiceSearchQuery(e.target.value); setInvoiceCurrentPage(0); }}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-brand-orange text-sm transition-colors"
+                />
+              </div>
+              {/* Status filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {['ALL', 'ISSUED', 'PAID', 'CANCELLED', 'OVERDUE'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => { setInvoiceStatusFilter(s); setInvoiceCurrentPage(0); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      invoiceStatusFilter === s ? 'bg-brand-orange text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {s === 'ALL' ? 'All Statuses' : s}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-gray-500 uppercase">
-                  <th className="pb-3 font-semibold">Invoice #</th>
-                  <th className="pb-3 font-semibold">Details</th>
-                  <th className="pb-3 font-semibold">Total Amount</th>
-                  <th className="pb-3 font-semibold">Status</th>
-                  <th className="pb-3 font-semibold">Generated Date</th>
-                  <th className="pb-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredInvoices.map(invoice => (
-                  <tr key={invoice.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { setSelectedInvoiceDetails(invoice); setIsInvoiceViewOpen(true); }}>
-                    <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={invoice.id}>INV-{invoice.id?.substring(0, 8).toUpperCase()}</td>
-                    <td className="py-4 text-gray-600 text-xs">
-                      {invoice.lineItems && invoice.lineItems.length > 0 ? invoice.lineItems[0].equipmentName || invoice.lineItems[0].description : invoice.bookingId}
-                    </td>
-                    <td className="py-4 font-medium text-gray-900">₹{invoice.totalAmount}</td>
-                    <td className="py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${invoice.status === 'PAID' ? 'bg-green-100 text-green-700' :
-                        invoice.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                        {invoice.status}
-                      </span>
-                    </td>
-                    <td className="py-4 text-gray-600">{invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : (invoice.generatedDate ? new Date(invoice.generatedDate).toLocaleDateString() : 'N/A')}</td>
-                    <td className="py-4 text-right">
-                      {invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedInvoiceToPay(invoice);
-                            setIsPaymentModalOpen(true);
-                          }}
-                          className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-1.5 rounded-full text-sm font-medium transition-colors"
-                        >
-                          Pay Now
-                        </button>
+
+          {/* Invoices Table */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-base">
+              <FileText size={18} className="text-brand-orange" /> Invoices
+              <span className="ml-auto text-xs font-medium text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{filteredInvoices.length} records</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-500 uppercase text-xs tracking-wider">
+                    <th className="pb-3 font-semibold">Invoice #</th>
+                    {isSystemAdmin && <th className="pb-3 font-semibold">Institution</th>}
+                    <th className="pb-3 font-semibold">Details</th>
+                    <th className="pb-3 font-semibold">Amount</th>
+                    <th className="pb-3 font-semibold">Status</th>
+                    <th className="pb-3 font-semibold">Date</th>
+                    {!isSystemAdmin && <th className="pb-3 font-semibold text-right">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInvoices
+                    .slice(invoiceCurrentPage * INVOICE_PAGE_SIZE, (invoiceCurrentPage + 1) * INVOICE_PAGE_SIZE)
+                    .map(invoice => (
+                    <tr key={invoice.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { setSelectedInvoiceDetails(invoice); setIsInvoiceViewOpen(true); }}>
+                      <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={invoice.id}>INV-{invoice.id?.substring(0, 8).toUpperCase()}</td>
+                      {isSystemAdmin && (
+                        <td className="py-4 text-gray-600 text-xs">{invoice.billedToInstitutionName || '—'}</td>
                       )}
-                    </td>
-                  </tr>
-                ))}
-                {filteredInvoices.length === 0 && (
-                  <tr>
-                    <td colSpan="6" className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl">
-                      {(!invoices || invoices.length === 0) ? "No invoices found." : "No invoices match your search."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                      <td className="py-4 text-gray-600 text-xs">
+                        {invoice.lineItems && invoice.lineItems.length > 0 ? invoice.lineItems[0].equipmentName || invoice.lineItems[0].description : invoice.bookingId}
+                      </td>
+                      <td className="py-4 font-medium text-gray-900">₹{invoice.totalAmount}</td>
+                      <td className="py-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          invoice.status === 'PAID' ? 'bg-green-100 text-green-700' :
+                          invoice.status === 'ISSUED' ? 'bg-amber-100 text-amber-700' :
+                          invoice.status === 'OVERDUE' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{invoice.status}</span>
+                      </td>
+                      <td className="py-4 text-gray-600">{invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : (invoice.generatedDate ? new Date(invoice.generatedDate).toLocaleDateString() : 'N/A')}</td>
+                      {/* Non-admin payment action */}
+                      {!isSystemAdmin && (
+                        <td className="py-4 text-right">
+                          {invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedInvoiceToPay(invoice); setIsPaymentModalOpen(true); }}
+                              className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-1.5 rounded-full text-sm font-medium transition-colors"
+                            >
+                              Pay Now
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {filteredInvoices.length === 0 && (
+                    <tr><td colSpan={isSystemAdmin ? 6 : 6} className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl">
+                      {(!invoices || invoices.length === 0) ? 'No invoices found.' : 'No invoices match your filters.'}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* Invoice Pagination */}
+            {Math.ceil(filteredInvoices.length / INVOICE_PAGE_SIZE) > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                <span className="text-xs text-gray-500">
+                  Showing {invoiceCurrentPage * INVOICE_PAGE_SIZE + 1}–{Math.min((invoiceCurrentPage + 1) * INVOICE_PAGE_SIZE, filteredInvoices.length)} of {filteredInvoices.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button disabled={invoiceCurrentPage === 0} onClick={() => setInvoiceCurrentPage(p => p - 1)} className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors">← Prev</button>
+                  {Array.from({ length: Math.min(Math.ceil(filteredInvoices.length / INVOICE_PAGE_SIZE), 5) }, (_, i) => {
+                    const tp = Math.ceil(filteredInvoices.length / INVOICE_PAGE_SIZE);
+                    const page = tp <= 5 ? i : Math.max(0, Math.min(invoiceCurrentPage - 2, tp - 5)) + i;
+                    return <button key={page} onClick={() => setInvoiceCurrentPage(page)} className={`w-8 h-8 text-xs font-semibold rounded-lg transition-colors ${invoiceCurrentPage === page ? 'bg-brand-orange text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{page + 1}</button>;
+                  })}
+                  <button disabled={invoiceCurrentPage >= Math.ceil(filteredInvoices.length / INVOICE_PAGE_SIZE) - 1} onClick={() => setInvoiceCurrentPage(p => p + 1)} className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors">Next →</button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {selectedDepartment && (
-            <>
-              <h2 className="text-xl font-bold flex items-center gap-2 mt-12 mb-6 text-gray-800">
-                <Activity size={24} className="text-brand-orange" />
-                Department Budgets
-              </h2>
+          {/* Department Budgets (non-admin) */}
+          {selectedDepartment && !isSystemAdmin && (
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Activity size={18} className="text-brand-orange" /> Department Budgets</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {(Array.isArray(budgets) ? budgets : []).map(budget => (
                   <div key={budget.id} className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
@@ -2715,81 +3059,81 @@ const Dashboard = () => {
                       <span className="text-xs bg-brand-orange text-white px-2 py-1 rounded-lg">Budget</span>
                     </div>
                     <div className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 text-sm">Allocated</span>
-                        <span className="font-semibold text-gray-900">₹{budget.allocatedAmount}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 text-sm">Spent</span>
-                        <span className="font-semibold text-red-600">₹{budget.spentAmount}</span>
-                      </div>
-                      <div className="flex justify-between pt-2 border-t border-gray-200">
-                        <span className="text-gray-800 font-bold text-sm">Remaining</span>
-                        <span className="font-bold text-green-600">₹{(budget.allocatedAmount - budget.spentAmount).toFixed(2)}</span>
-                      </div>
+                      <div className="flex justify-between"><span className="text-gray-500 text-sm">Allocated</span><span className="font-semibold text-gray-900">₹{budget.allocatedAmount}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500 text-sm">Spent</span><span className="font-semibold text-red-600">₹{budget.spentAmount}</span></div>
+                      <div className="flex justify-between pt-2 border-t border-gray-200"><span className="text-gray-800 font-bold text-sm">Remaining</span><span className="font-bold text-green-600">₹{(budget.allocatedAmount - budget.spentAmount).toFixed(2)}</span></div>
                     </div>
                   </div>
                 ))}
-                {(!budgets || budgets.length === 0) && (
-                  <p className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl">No budgets found for this department.</p>
-                )}
+                {(!budgets || budgets.length === 0) && <p className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl">No budgets found for this department.</p>}
               </div>
-            </>
+            </div>
           )}
 
-          <h2 className="text-xl font-bold flex items-center gap-2 mt-12 mb-6 text-gray-800">
-            <FileText size={24} className="text-brand-orange" />
-            Recent Transactions
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-gray-500 uppercase">
-                  <th className="pb-3 font-semibold">Transaction ID</th>
-                  <th className="pb-3 font-semibold">Date</th>
-                  <th className="pb-3 font-semibold">Method</th>
-                  <th className="pb-3 font-semibold">Ref Number</th>
-                  <th className="pb-3 font-semibold">Amount</th>
-                  <th className="pb-3 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(Array.isArray(filteredInvoices) ? filteredInvoices : [])
-                  .flatMap(inv => (Array.isArray(inv?.transactions) ? inv.transactions : []).map(t => ({ ...t, invoiceId: inv?.id })))
-                  .sort((a, b) => new Date(b?.transactionDate || 0) - new Date(a?.transactionDate || 0))
-                  .slice(0, 5)
-                  .map(tx => (
-                    <tr 
-                      key={tx?.id || Math.random()} 
-                      className="border-b border-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
-                      onClick={() => {
-                        setSelectedTransactionDetails(tx);
-                        setIsTransactionModalOpen(true);
-                      }}
-                    >
-                      <td className="py-4 font-medium text-gray-800 text-xs" title={tx?.id}>{tx?.id ? String(tx.id).substring(0, 8) : 'N/A'}...</td>
-                      <td className="py-4 text-gray-600">{tx?.transactionDate ? new Date(tx.transactionDate).toLocaleDateString() : 'N/A'}</td>
-                      <td className="py-4 text-gray-600">{tx?.paymentMethod || 'N/A'}</td>
-                      <td className="py-4 text-gray-600">{tx?.referenceNumber || 'N/A'}</td>
-                      <td className="py-4 font-medium text-gray-900">₹{tx?.amount || 0}</td>
-                      <td className="py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${tx?.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
-                          tx?.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                          {tx?.status || 'UNKNOWN'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                {(!filteredInvoices || filteredInvoices.flatMap(inv => Array.isArray(inv?.transactions) ? inv.transactions : []).length === 0) && (
-                  <tr>
-                    <td colSpan="6" className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl">No transactions found.</td>
+          {/* Transactions Table */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-base">
+              <Activity size={18} className="text-brand-orange" /> {isSystemAdmin ? 'All Transactions' : 'Recent Transactions'}
+              <span className="ml-auto text-xs font-medium text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{allTransactions.length} records</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-500 uppercase text-xs tracking-wider">
+                    <th className="pb-3 font-semibold">Transaction ID</th>
+                    <th className="pb-3 font-semibold">Invoice #</th>
+                    <th className="pb-3 font-semibold">Date</th>
+                    <th className="pb-3 font-semibold">Method</th>
+                    <th className="pb-3 font-semibold">Ref Number</th>
+                    <th className="pb-3 font-semibold">Amount</th>
+                    <th className="pb-3 font-semibold">Status</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {allTransactions
+                    .slice(txCurrentPage * TX_PAGE_SIZE, (txCurrentPage + 1) * TX_PAGE_SIZE)
+                    .map(tx => (
+                      <tr key={tx?.id || Math.random()} className="border-b border-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                        onClick={() => { setSelectedTransactionDetails(tx); setIsTransactionModalOpen(true); }}
+                      >
+                        <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={tx?.id}>{tx?.id ? String(tx.id).substring(0, 8) : 'N/A'}...</td>
+                        <td className="py-4 text-gray-500 text-xs font-mono">{tx?.invoiceId ? 'INV-' + String(tx.invoiceId).substring(0, 8).toUpperCase() : '—'}</td>
+                        <td className="py-4 text-gray-600">{tx?.transactionDate ? new Date(tx.transactionDate).toLocaleDateString() : 'N/A'}</td>
+                        <td className="py-4 text-gray-600">{tx?.paymentMethod || 'N/A'}</td>
+                        <td className="py-4 text-gray-600">{tx?.referenceNumber || 'N/A'}</td>
+                        <td className="py-4 font-medium text-gray-900">₹{tx?.amount || 0}</td>
+                        <td className="py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            tx?.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
+                            tx?.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>{tx?.status || 'UNKNOWN'}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  {allTransactions.length === 0 && (
+                    <tr><td colSpan="7" className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl">No transactions found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* Transaction Pagination */}
+            {Math.ceil(allTransactions.length / TX_PAGE_SIZE) > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                <span className="text-xs text-gray-500">Showing {txCurrentPage * TX_PAGE_SIZE + 1}–{Math.min((txCurrentPage + 1) * TX_PAGE_SIZE, allTransactions.length)} of {allTransactions.length}</span>
+                <div className="flex items-center gap-1">
+                  <button disabled={txCurrentPage === 0} onClick={() => setTxCurrentPage(p => p - 1)} className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors">← Prev</button>
+                  {Array.from({ length: Math.min(Math.ceil(allTransactions.length / TX_PAGE_SIZE), 5) }, (_, i) => {
+                    const tp = Math.ceil(allTransactions.length / TX_PAGE_SIZE);
+                    const page = tp <= 5 ? i : Math.max(0, Math.min(txCurrentPage - 2, tp - 5)) + i;
+                    return <button key={page} onClick={() => setTxCurrentPage(page)} className={`w-8 h-8 text-xs font-semibold rounded-lg transition-colors ${txCurrentPage === page ? 'bg-brand-orange text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{page + 1}</button>;
+                  })}
+                  <button disabled={txCurrentPage >= Math.ceil(allTransactions.length / TX_PAGE_SIZE) - 1} onClick={() => setTxCurrentPage(p => p + 1)} className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors">Next →</button>
+                </div>
+              </div>
+            )}
           </div>
+
         </section>
       )}
 
@@ -3783,6 +4127,183 @@ const Dashboard = () => {
             </button>
           </div>
         )}
+      </div>
+    </div>
+  )}
+
+  {/* Dashboard KPI Drill-Down Modal */}
+  {showKpiModal && (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-fade-in" onClick={(e) => { if (e.target === e.currentTarget) setShowKpiModal(false); }}>
+      <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col transform transition-all">
+        {/* Modal Header */}
+        <div className="p-6 md:p-8 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 flex justify-between items-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-orange/5 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">{kpiModalTitle}</h2>
+            <p className="text-gray-500 text-sm mt-1">
+              {kpiModalAuthorized
+                ? `Showing ${kpiModalData.length} record${kpiModalData.length !== 1 ? 's' : ''}`
+                : 'You can view summary data. Full details require a management role.'}
+            </p>
+          </div>
+          <button onClick={() => setShowKpiModal(false)} className="text-gray-400 hover:text-gray-600 bg-white hover:bg-gray-100 p-2 rounded-full transition-colors border border-gray-100 shadow-sm relative z-10">
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 md:p-8 overflow-y-auto max-h-[65vh]">
+          {!kpiModalAuthorized ? (
+            /* Unauthorized View - show summary only */
+            <div className="flex flex-col items-center gap-6 py-8">
+              <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center">
+                <Shield size={36} className="text-amber-500" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-bold text-gray-800 mb-2">Summary View</h3>
+                <p className="text-gray-500 max-w-sm">You can see the count but detailed records are only available to Lab Managers, Dept Heads, and Admins.</p>
+              </div>
+              <div className="bg-gray-50 rounded-2xl px-12 py-8 border border-gray-100 text-center">
+                <div className="text-5xl font-black text-gray-800 mb-2">{kpiModalData.length}</div>
+                <div className="text-gray-500 font-medium">{kpiModalTitle}</div>
+              </div>
+            </div>
+          ) : kpiModalData.length === 0 ? (
+            <div className="flex justify-center items-center h-40 bg-gray-50 rounded-2xl border border-gray-100">
+              <span className="text-gray-500 font-medium">No records found.</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              {/* Equipment Table */}
+              {(kpiModalType === 'equipment' || kpiModalType === 'maintenance') && (
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500 uppercase text-xs tracking-wider">
+                      <th className="pb-3 font-semibold">Equipment Name</th>
+                      <th className="pb-3 font-semibold">Model</th>
+                      <th className="pb-3 font-semibold">Status</th>
+                      <th className="pb-3 font-semibold text-right">Price/Hr</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kpiModalData.map(item => (
+                      <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                        <td className="py-4 font-medium text-gray-800">{item.name}</td>
+                        <td className="py-4 text-gray-500">{item.modelNumber || '—'}</td>
+                        <td className="py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            item.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' :
+                            item.status === 'UNDER_MAINTENANCE' ? 'bg-red-100 text-red-700' :
+                            item.status === 'BOOKED' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>{item.status}</span>
+                        </td>
+                        <td className="py-4 font-semibold text-gray-900 text-right">₹{item.pricePerHour || 0}/hr</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {/* Pending Approvals Table with Approve/Reject Actions */}
+              {kpiModalType === 'pending' && (
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500 uppercase text-xs tracking-wider">
+                      <th className="pb-3 font-semibold">User</th>
+                      <th className="pb-3 font-semibold">Equipment</th>
+                      <th className="pb-3 font-semibold">Time Slot</th>
+                      <th className="pb-3 font-semibold text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kpiModalData.map(item => (
+                      <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                        <td className="py-4 font-medium text-gray-800">{item.userName || '—'}</td>
+                        <td className="py-4 text-gray-600">{item.equipmentName || '—'}</td>
+                        <td className="py-4 text-gray-500 text-xs">
+                          {item.startTime ? new Date(item.startTime).toLocaleString() : '—'}
+                          {item.endTime ? ` → ${new Date(item.endTime).toLocaleTimeString()}` : ''}
+                        </td>
+                        <td className="py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await api.patch(`/bookings/${item.id}/status?status=CONFIRMED`);
+                                  setKpiModalData(prev => prev.filter(b => b.id !== item.id));
+                                  fetchBookings();
+                                } catch(e) { alert('Failed to approve: ' + (e.response?.data?.message || e.message)); }
+                              }}
+                              className="flex items-center gap-1.5 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md"
+                            >
+                              <CheckCircle size={14} /> Approve
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm('Are you sure you want to reject this booking?')) return;
+                                try {
+                                  await api.patch(`/bookings/${item.id}/status?status=CANCELLED`);
+                                  setKpiModalData(prev => prev.filter(b => b.id !== item.id));
+                                  fetchBookings();
+                                } catch(e) { alert('Failed to reject: ' + (e.response?.data?.message || e.message)); }
+                              }}
+                              className="flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md"
+                            >
+                              <X size={14} /> Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {/* Bookings Table (Today's Bookings) */}
+              {kpiModalType === 'bookings' && (
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500 uppercase text-xs tracking-wider">
+                      <th className="pb-3 font-semibold">User</th>
+                      <th className="pb-3 font-semibold">Equipment</th>
+                      <th className="pb-3 font-semibold">Time Slot</th>
+                      <th className="pb-3 font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kpiModalData.map(item => (
+                      <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                        <td className="py-4 font-medium text-gray-800">{item.userName || '—'}</td>
+                        <td className="py-4 text-gray-600">{item.equipmentName || '—'}</td>
+                        <td className="py-4 text-gray-500 text-xs">
+                          {item.startTime ? new Date(item.startTime).toLocaleString() : '—'}
+                          {item.endTime ? ` → ${new Date(item.endTime).toLocaleTimeString()}` : ''}
+                        </td>
+                        <td className="py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            item.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' :
+                            item.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                            item.status === 'COMPLETED' ? 'bg-blue-100 text-blue-700' :
+                            item.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>{item.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+          <button onClick={() => setShowKpiModal(false)} className="px-6 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   )}

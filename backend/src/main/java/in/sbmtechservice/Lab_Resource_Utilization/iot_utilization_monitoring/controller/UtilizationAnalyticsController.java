@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import java.util.Map;
+import java.util.HashMap;
+import in.sbmtechservice.Lab_Resource_Utilization.iot_utilization_monitoring.dto.DailyAggregatedUtilization;
+import in.sbmtechservice.Lab_Resource_Utilization.iot_utilization_monitoring.dto.EquipmentUtilizationStat;
 
 @RestController
 @RequestMapping("/api/v1/utilization-analytics")
@@ -21,14 +26,26 @@ public class UtilizationAnalyticsController {
     private final DailyUtilizationMetricRepository metricRepository;
 
     @GetMapping("/heatmap")
-    public ResponseEntity<List<DailyUtilizationMetric>> getHeatmapData(
+    public ResponseEntity<List<DailyAggregatedUtilization>> getHeatmapData(
             @RequestParam("startDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam("endDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         
-        List<DailyUtilizationMetric> data = metricRepository.findAll();
-        // In a real application we would filter by date, e.g.:
-        // List<DailyUtilizationMetric> data = metricRepository.findByRecordDateBetween(startDate, endDate);
+        List<DailyAggregatedUtilization> data = metricRepository.getAggregatedMetrics(startDate, endDate);
         return ResponseEntity.ok(data);
+    }
+
+    @GetMapping("/performance")
+    public ResponseEntity<Map<String, List<EquipmentUtilizationStat>>> getPerformanceStats(
+            @RequestParam("startDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam("endDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        
+        List<EquipmentUtilizationStat> top = metricRepository.getTopUtilizedEquipment(startDate, endDate, PageRequest.of(0, 5));
+        List<EquipmentUtilizationStat> bottom = metricRepository.getLeastUtilizedEquipment(startDate, endDate, PageRequest.of(0, 5));
+        
+        Map<String, List<EquipmentUtilizationStat>> response = new HashMap<>();
+        response.put("top", top);
+        response.put("bottom", bottom);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/equipment/{equipmentId}")
