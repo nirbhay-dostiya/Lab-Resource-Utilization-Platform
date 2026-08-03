@@ -146,6 +146,9 @@ const Dashboard = () => {
   const [selectedInvoiceDetails, setSelectedInvoiceDetails] = useState(null);
   const [isInvoiceViewOpen, setIsInvoiceViewOpen] = useState(false);
 
+  const [selectedTransactionDetails, setSelectedTransactionDetails] = useState(null);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+
   const isSystemAdmin = user?.roles?.includes('SYSTEM_ADMIN') || user?.authorities?.some(auth => auth.authority === 'SYSTEM_ADMIN');
 
   useEffect(() => {
@@ -2698,7 +2701,14 @@ const Dashboard = () => {
                   .sort((a, b) => new Date(b?.transactionDate || 0) - new Date(a?.transactionDate || 0))
                   .slice(0, 5)
                   .map(tx => (
-                    <tr key={tx?.id || Math.random()} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                    <tr 
+                      key={tx?.id || Math.random()} 
+                      className="border-b border-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setSelectedTransactionDetails(tx);
+                        setIsTransactionModalOpen(true);
+                      }}
+                    >
                       <td className="py-4 font-medium text-gray-800 text-xs" title={tx?.id}>{tx?.id ? String(tx.id).substring(0, 8) : 'N/A'}...</td>
                       <td className="py-4 text-gray-600">{tx?.transactionDate ? new Date(tx.transactionDate).toLocaleDateString() : 'N/A'}</td>
                       <td className="py-4 text-gray-600">{tx?.paymentMethod || 'N/A'}</td>
@@ -3533,6 +3543,64 @@ const Dashboard = () => {
               Close
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {isTransactionModalOpen && selectedTransactionDetails && (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-fade-in" onClick={(e) => { if (e.target === e.currentTarget) setIsTransactionModalOpen(false); }}>
+      <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col transform transition-all">
+        <div className="p-6 md:p-8 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 flex justify-between items-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-orange/5 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Transaction Details</h2>
+            <p className="text-gray-500 text-sm mt-1">ID: {selectedTransactionDetails.id}</p>
+          </div>
+          <button onClick={() => setIsTransactionModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-white hover:bg-gray-100 p-2 rounded-full transition-colors border border-gray-100 shadow-sm relative z-10">
+            <X size={24} />
+          </button>
+        </div>
+        <div className="p-6 md:p-8 space-y-6 flex-1 overflow-y-auto max-h-[70vh]">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <span className="text-gray-500 text-xs font-bold uppercase tracking-wider block mb-1">Date</span>
+              <span className="font-semibold text-gray-900">{selectedTransactionDetails.transactionDate ? new Date(selectedTransactionDetails.transactionDate).toLocaleString() : 'N/A'}</span>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <span className="text-gray-500 text-xs font-bold uppercase tracking-wider block mb-1">Status</span>
+              <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
+                selectedTransactionDetails.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
+                selectedTransactionDetails.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {selectedTransactionDetails.status || 'UNKNOWN'}
+              </span>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <span className="text-gray-500 text-xs font-bold uppercase tracking-wider block mb-1">Amount</span>
+              <span className="font-semibold text-gray-900">₹{selectedTransactionDetails.amount || 0}</span>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <span className="text-gray-500 text-xs font-bold uppercase tracking-wider block mb-1">Payment Method</span>
+              <span className="font-semibold text-gray-900">{selectedTransactionDetails.paymentMethod || 'N/A'}</span>
+            </div>
+          </div>
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+            <span className="text-gray-500 text-xs font-bold uppercase tracking-wider block mb-1">Reference Number</span>
+            <span className="font-semibold text-gray-900 break-all">{selectedTransactionDetails.referenceNumber || 'N/A'}</span>
+          </div>
+          {selectedTransactionDetails.invoiceId && (
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <span className="text-gray-500 text-xs font-bold uppercase tracking-wider block mb-1">Associated Invoice ID</span>
+              <span className="font-semibold text-brand-orange break-all">{selectedTransactionDetails.invoiceId}</span>
+            </div>
+          )}
+        </div>
+        <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end">
+          <button onClick={() => setIsTransactionModalOpen(false)} className="px-6 py-2.5 bg-brand-orange hover:bg-orange-600 text-white rounded-full font-semibold transition-colors">
+            Close
+          </button>
         </div>
       </div>
     </div>
