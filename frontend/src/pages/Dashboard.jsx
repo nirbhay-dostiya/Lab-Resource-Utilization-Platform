@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar, MoreVertical, LayoutDashboard, Activity, CheckCircle, Wrench, Clock, FileText, ShoppingCart, X, Bell, Search } from 'lucide-react';
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -158,10 +158,12 @@ const Dashboard = () => {
   const [bookingSearchQuery, setBookingSearchQuery] = useState('');
   const [bookingCurrentPage, setBookingCurrentPage] = useState(0);
   const BOOKING_PAGE_SIZE = 10;
+  const [bookingHistoryInstitutionFilter, setBookingHistoryInstitutionFilter] = useState('');
 
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
+  const notificationRef = useRef(null);
 
   // Payment Simulation States
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -419,6 +421,19 @@ const Dashboard = () => {
     const interval = setInterval(fetchNotifications, 60000); // Polling every minute
     return () => clearInterval(interval);
   }, [user]);
+
+  // Close notification panel when clicking outside
+  useEffect(() => {
+    if (!showNotifications) return;
+    const handleClickOutside = (e) => {
+      if (notificationRef.current && !notificationRef.current.contains(e.target)) {
+        setShowNotifications(false);
+      }
+    };
+    // Use capture phase so clicks on other interactive elements are caught first
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => document.removeEventListener('mousedown', handleClickOutside, true);
+  }, [showNotifications]);
 
 
   const dashboardStats = useMemo(() => {
@@ -1142,50 +1157,160 @@ const Dashboard = () => {
             </div>
           </div>
           <div className="flex items-center gap-5 relative">
-            <div className="relative">
-              <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 hover:bg-gray-100 rounded-full relative transition-colors text-gray-500">
+            {/* ── Notification Bell ── */}
+            <div className="relative" ref={notificationRef}>
+              <button
+                id="notification-bell-btn"
+                onClick={() => setShowNotifications(prev => !prev)}
+                className="p-2 hover:bg-gray-100 rounded-full relative transition-colors text-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                aria-label="Toggle notifications"
+                aria-expanded={showNotifications}
+                aria-haspopup="true"
+              >
                 <Bell size={20} />
                 {notifications.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white px-0.5">
+                    {notifications.length > 99 ? '99+' : notifications.length}
+                  </span>
                 )}
               </button>
+
+              {/* ── Notification Panel ── */}
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 z-50 p-2 overflow-hidden">
-                  <div className="p-3 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800">Notifications</h3>
-                    <button onClick={async () => {
-                      try {
-                        await api.patch(`/notifications/user/${user.id}/read-all`);
-                        setNotifications([]);
-                      } catch (err) {}
-                    }} className="text-xs text-brand-orange font-medium hover:underline">Mark all read</button>
+                <div
+                  role="dialog"
+                  aria-label="Notifications panel"
+                  className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden"
+                  style={{ animation: 'notifSlideIn 0.15s ease-out' }}
+                >
+                  {/* Header */}
+                  <div className="px-4 py-3.5 border-b border-gray-100 flex justify-between items-center bg-gray-50/80">
+                    <div className="flex items-center gap-2">
+                      <Bell size={16} className="text-gray-500" />
+                      <h3 className="font-bold text-gray-800 text-sm">Notifications</h3>
+                      {notifications.length > 0 && (
+                        <span className="bg-red-100 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+                          {notifications.length} new
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.patch(`/notifications/user/${user.id}/read-all`);
+                              setNotifications([]);
+                            } catch (err) {}
+                          }}
+                          className="text-xs text-orange-500 font-semibold hover:text-orange-600 transition-colors"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowNotifications(false)}
+                        className="p-1 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+                        aria-label="Close notifications"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="max-h-80 overflow-y-auto">
+
+                  {/* Body */}
+                  <div className="max-h-[420px] overflow-y-auto divide-y divide-gray-50">
                     {notifications.length === 0 ? (
-                      <p className="p-4 text-sm text-gray-500 text-center">No new notifications.</p>
-                    ) : (
-                      notifications.map(n => (
-                        <div key={n.id} className="p-3 border-b border-gray-50 hover:bg-gray-50 flex justify-between gap-2 items-start cursor-pointer" onClick={async () => {
-                          try {
-                            if (!n.isRead) {
-                              await api.patch(`/notifications/${n.id}/read`);
-                              setNotifications(notifications.filter(noti => noti.id !== n.id));
-                            }
-                            setSelectedNotification(n);
-                            setShowNotifications(false);
-                          } catch (err) {}
-                        }}>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{n.title || n.referenceType}</p>
-                            <p className="text-xs text-gray-600 line-clamp-2">{n.message || n.content}</p>
-                          </div>
-                          <button className="text-gray-400 hover:text-gray-600 shrink-0" onClick={(e) => { e.stopPropagation(); setNotifications(notifications.filter(noti => noti.id !== n.id)); }}>
-                            <X size={14} />
-                          </button>
+                      <div className="py-10 flex flex-col items-center gap-3 text-center px-6">
+                        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+                          <Bell size={22} className="text-gray-300" />
                         </div>
-                      ))
+                        <p className="text-sm font-medium text-gray-500">You're all caught up!</p>
+                        <p className="text-xs text-gray-400">No new notifications at the moment.</p>
+                      </div>
+                    ) : (
+                      notifications.map(n => {
+                        // Type-based icon + color
+                        const typeConfig = {
+                          BOOKING:                { icon: <Calendar size={14}/>, bg: 'bg-blue-100',   text: 'text-blue-600',   label: 'Booking'     },
+                          BOOKING_APPROVAL_REQUEST:{ icon: <Clock size={14}/>,    bg: 'bg-amber-100',  text: 'text-amber-600',  label: 'Approval'    },
+                          EQUIPMENT:              { icon: <Server size={14}/>,   bg: 'bg-green-100',  text: 'text-green-600',  label: 'Equipment'   },
+                          MAINTENANCE:            { icon: <Wrench size={14}/>,   bg: 'bg-orange-100', text: 'text-orange-600', label: 'Maintenance' },
+                          INVOICE:                { icon: <FileText size={14}/>, bg: 'bg-purple-100', text: 'text-purple-600', label: 'Invoice'     },
+                          SHARING_REQUEST:        { icon: <Network size={14}/>,  bg: 'bg-teal-100',   text: 'text-teal-600',   label: 'Sharing'     },
+                          ACCESS_REQUEST:         { icon: <Key size={14}/>,      bg: 'bg-rose-100',   text: 'text-rose-600',   label: 'Access'      },
+                          WAITLIST:               { icon: <Clock size={14}/>,    bg: 'bg-slate-100',  text: 'text-slate-600',  label: 'Waitlist'    },
+                        };
+                        const cfg = typeConfig[n.referenceType] || { icon: <Bell size={14}/>, bg: 'bg-gray-100', text: 'text-gray-600', label: n.referenceType };
+
+                        const timeAgo = (() => {
+                          if (!n.createdAt) return '';
+                          const diff = Date.now() - new Date(n.createdAt).getTime();
+                          const mins = Math.floor(diff / 60000);
+                          if (mins < 1) return 'Just now';
+                          if (mins < 60) return `${mins}m ago`;
+                          const hrs = Math.floor(mins / 60);
+                          if (hrs < 24) return `${hrs}h ago`;
+                          return `${Math.floor(hrs / 24)}d ago`;
+                        })();
+
+                        return (
+                          <div
+                            key={n.id}
+                            className={`flex gap-3 px-4 py-3.5 cursor-pointer transition-colors group ${n.isRead ? 'hover:bg-gray-50' : 'bg-orange-50/40 hover:bg-orange-50/70'}`}
+                            onClick={async () => {
+                              try {
+                                if (!n.isRead) {
+                                  await api.patch(`/notifications/${n.id}/read`);
+                                  setNotifications(prev => prev.filter(noti => noti.id !== n.id));
+                                }
+                                setSelectedNotification(n);
+                                setShowNotifications(false);
+                              } catch (err) {}
+                            }}
+                          >
+                            {/* Icon Badge */}
+                            <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-0.5 ${cfg.bg} ${cfg.text}`}>
+                              {cfg.icon}
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-0.5">
+                                <span className={`text-[10px] font-bold uppercase tracking-wide ${cfg.text}`}>{cfg.label}</span>
+                                <span className="text-[10px] text-gray-400 shrink-0">{timeAgo}</span>
+                              </div>
+                              <p className="text-xs text-gray-700 line-clamp-2 leading-relaxed">
+                                {n.message || n.content}
+                              </p>
+                            </div>
+
+                            {/* Dismiss button */}
+                            <button
+                              className="shrink-0 opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded-full transition-all text-gray-400 hover:text-gray-600"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await api.patch(`/notifications/${n.id}/read`);
+                                } catch (err) {}
+                                setNotifications(prev => prev.filter(noti => noti.id !== n.id));
+                              }}
+                              aria-label="Dismiss notification"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
+
+                  {/* Footer */}
+                  {notifications.length > 0 && (
+                    <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/60 text-center">
+                      <p className="text-[11px] text-gray-400">Click a notification to view details</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2677,7 +2802,27 @@ const Dashboard = () => {
       {/* 6. Booking History View */}
       {(activeSection === 'book_equipment' && (bookingTab === 'history' || hasRole('INSTITUTION_ADMIN') || isSystemAdmin)) && (
         <section className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 animate-fade-in flex flex-col gap-8">
-          <h2 className="text-xl font-medium flex items-center gap-2"><ShoppingCart size={24} className="text-brand-orange" /> {isSystemAdmin ? 'Global Bookings Overview' : 'Booking History'}</h2>
+          <div className="flex justify-between items-center flex-wrap gap-4">
+            <h2 className="text-xl font-medium flex items-center gap-2"><ShoppingCart size={24} className="text-brand-orange" /> {isSystemAdmin ? 'Global Bookings Overview' : 'Booking History'}</h2>
+            {isSystemAdmin && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 font-medium">Filter by Institute:</span>
+                <select
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white text-gray-700 focus:outline-none focus:border-brand-orange"
+                  value={bookingHistoryInstitutionFilter}
+                  onChange={(e) => {
+                    setBookingHistoryInstitutionFilter(e.target.value);
+                    setBookingHistoryPage(1);
+                  }}
+                >
+                  <option value="">All Institutes</option>
+                  {institutions.map(inst => (
+                    <option key={inst.id} value={inst.id}>{inst.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead>
@@ -2693,7 +2838,15 @@ const Dashboard = () => {
               </thead>
               <tbody>
                 {(() => {
-                  const historyBookings = isSystemAdmin ? bookingsList : bookingsList.filter(b => b.userId === user?.id || b.userInstitutionId === user?.institutionId);
+                  let historyBookings = isSystemAdmin ? bookingsList : bookingsList.filter(b => b.userId === user?.id || b.userInstitutionId === user?.institutionId);
+                  
+                  if (isSystemAdmin && bookingHistoryInstitutionFilter) {
+                    historyBookings = historyBookings.filter(b => 
+                      b.userInstitutionId?.toString() === bookingHistoryInstitutionFilter || 
+                      b.equipmentInstitutionId?.toString() === bookingHistoryInstitutionFilter
+                    );
+                  }
+                  
                   const sortedHistoryBookings = [...historyBookings].sort((a, b) => new Date(b.startTime).getTime() < new Date(a.startTime).getTime() ? 1 : -1);
                   const paginatedBookings = sortedHistoryBookings.slice((bookingHistoryPage - 1) * itemsPerPage, bookingHistoryPage * itemsPerPage);
                   const totalPages = Math.ceil(sortedHistoryBookings.length / itemsPerPage);
@@ -2761,7 +2914,13 @@ const Dashboard = () => {
             </table>
           </div>
           {(() => {
-            const historyBookings = isSystemAdmin ? bookingsList : bookingsList.filter(b => b.userId === user?.id || b.userInstitutionId === user?.institutionId);
+            let historyBookings = isSystemAdmin ? bookingsList : bookingsList.filter(b => b.userId === user?.id || b.userInstitutionId === user?.institutionId);
+            if (isSystemAdmin && bookingHistoryInstitutionFilter) {
+              historyBookings = historyBookings.filter(b => 
+                b.userInstitutionId?.toString() === bookingHistoryInstitutionFilter || 
+                b.equipmentInstitutionId?.toString() === bookingHistoryInstitutionFilter
+              );
+            }
             const totalPages = Math.ceil(historyBookings.length / itemsPerPage);
             if (totalPages > 1) {
               return (

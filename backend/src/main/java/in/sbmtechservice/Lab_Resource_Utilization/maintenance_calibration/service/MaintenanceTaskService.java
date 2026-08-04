@@ -10,6 +10,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.dto.Ma
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.entity.MaintenanceTask;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.enums.MaintenanceStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.repository.MaintenanceTaskRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ public class MaintenanceTaskService {
     private final MaintenanceTaskRepository maintenanceTaskRepository;
     private final EquipmentRepository equipmentRepository;
     private final UserRepository userRepository;
+    private final NotificationDispatcher notificationDispatcher;
 
     @Transactional
     public MaintenanceTaskResponse scheduleTask(MaintenanceTaskRequest request) {
@@ -54,6 +56,14 @@ public class MaintenanceTaskService {
         equipmentRepository.save(equipment);
 
         MaintenanceTask saved = maintenanceTaskRepository.save(task);
+
+        // ── NOTIFICATION: Alert technician + dept heads + inst admins ──
+        UUID institutionId = equipment.getDepartment().getInstitution().getId();
+        String scheduledDate = request.getScheduledDate() != null
+                ? request.getScheduledDate().toString() : "TBD";
+        notificationDispatcher.notifyMaintenanceScheduled(
+                technician, institutionId, saved.getId(), equipment.getName(), scheduledDate);
+
         return mapToResponse(saved);
     }
 
@@ -75,6 +85,11 @@ public class MaintenanceTaskService {
         equipmentRepository.save(equipment);
 
         MaintenanceTask saved = maintenanceTaskRepository.save(task);
+
+        // ── NOTIFICATION: Alert dept heads + inst admins that equipment is back ──
+        UUID institutionId = equipment.getDepartment().getInstitution().getId();
+        notificationDispatcher.notifyMaintenanceCompleted(institutionId, saved.getId(), equipment.getName());
+
         return mapToResponse(saved);
     }
 

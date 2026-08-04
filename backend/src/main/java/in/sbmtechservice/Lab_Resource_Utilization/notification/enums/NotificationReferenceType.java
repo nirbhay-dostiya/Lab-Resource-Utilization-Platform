@@ -5,6 +5,9 @@ public enum NotificationReferenceType {
     BOOKING_APPROVAL_REQUEST,
     WAITLIST,
     MAINTENANCE,
-    SHARING_REQUEST
+    SHARING_REQUEST,
+    EQUIPMENT,
+    INVOICE,
+    ACCESS_REQUEST
 }
 

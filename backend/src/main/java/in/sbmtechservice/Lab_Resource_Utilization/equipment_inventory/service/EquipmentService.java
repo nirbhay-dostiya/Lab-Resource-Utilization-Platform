@@ -1,4 +1,5 @@
 package in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.service;
+
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.dto.EquipmentRequest;
@@ -12,6 +13,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository.TagRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.DepartmentRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ public class EquipmentService {
     private final EquipmentCategoryRepository categoryRepository;
     private final TagRepository tagRepository;
     private final UserRepository userRepository;
+    private final NotificationDispatcher notificationDispatcher;
 
     @Transactional
     public EquipmentResponse addEquipment(EquipmentRequest request, String currentUserEmail) {
@@ -43,7 +46,10 @@ public class EquipmentService {
         if (!isSystemAdmin) {
             Department requestDepartment = departmentRepository.findById(request.getDepartmentId())
                     .orElseThrow(() -> new IllegalArgumentException("Department not found."));
-            UUID userInstId = currentUser.getInstitution() != null ? currentUser.getInstitution().getId() : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null ? currentUser.getDepartment().getInstitution().getId() : null);
+            UUID userInstId = currentUser.getInstitution() != null
+                    ? currentUser.getInstitution().getId()
+                    : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null
+                            ? currentUser.getDepartment().getInstitution().getId() : null);
             if (userInstId == null || !userInstId.equals(requestDepartment.getInstitution().getId())) {
                 throw new SecurityException("You can only add equipment to your own institution.");
             }
@@ -81,10 +87,16 @@ public class EquipmentService {
                 .build();
 
         Equipment saved = equipmentRepository.save(equipment);
+
+        // ── NOTIFICATION: Alert institute admins, dept heads, and system admins ──
+        UUID institutionId = department.getInstitution().getId();
+        String addedByName = currentUser.getFirstName() + " " + currentUser.getLastName();
+        notificationDispatcher.notifyEquipmentAdded(institutionId, saved.getId(), saved.getName(), addedByName);
+
         return mapToResponse(saved);
     }
 
-    // 🚨 RESTORED METHOD: Controller needs this to fetch equipment 🚨
+    // Fetch equipment by department
     public List<EquipmentResponse> getEquipmentByDepartment(UUID departmentId) {
         return equipmentRepository.findByDepartmentId(departmentId).stream()
                 .map(this::mapToResponse)
@@ -92,8 +104,7 @@ public class EquipmentService {
     }
 
     public List<EquipmentResponse> getEquipmentByInstitution(UUID institutionId) {
-        return equipmentRepository.findAll().stream()
-                .filter(e -> e.getDepartment() != null && e.getDepartment().getInstitution() != null && e.getDepartment().getInstitution().getId().equals(institutionId))
+        return equipmentRepository.findByDepartmentInstitutionId(institutionId).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -104,7 +115,6 @@ public class EquipmentService {
                 .collect(Collectors.toList());
     }
 
-    // 🚨 RESTORED METHOD: Controller needs this to update status 🚨
     @Transactional
     public EquipmentResponse updateEquipmentStatus(UUID equipmentId, EquipmentStatus newStatus, String currentUserEmail) {
         User currentUser = userRepository.findByEmail(currentUserEmail)
@@ -117,14 +127,25 @@ public class EquipmentService {
                 .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
 
         if (!isSystemAdmin) {
-            UUID userInstId = currentUser.getInstitution() != null ? currentUser.getInstitution().getId() : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null ? currentUser.getDepartment().getInstitution().getId() : null);
+            UUID userInstId = currentUser.getInstitution() != null
+                    ? currentUser.getInstitution().getId()
+                    : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null
+                            ? currentUser.getDepartment().getInstitution().getId() : null);
             if (userInstId == null || !userInstId.equals(equipment.getDepartment().getInstitution().getId())) {
                 throw new SecurityException("You can only update equipment status in your own institution.");
             }
         }
 
+        String oldStatus = equipment.getStatus().name();
         equipment.setStatus(newStatus);
         Equipment saved = equipmentRepository.save(equipment);
+
+        // ── NOTIFICATION: Alert dept heads + inst admins about status change ──
+        UUID institutionId = equipment.getDepartment().getInstitution().getId();
+        String changedByName = currentUser.getFirstName() + " " + currentUser.getLastName();
+        notificationDispatcher.notifyEquipmentStatusChanged(
+                institutionId, saved.getId(), saved.getName(), oldStatus, newStatus.name(), changedByName);
+
         return mapToResponse(saved);
     }
 
@@ -140,7 +161,10 @@ public class EquipmentService {
                 .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
 
         if (!isSystemAdmin) {
-            UUID userInstId = currentUser.getInstitution() != null ? currentUser.getInstitution().getId() : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null ? currentUser.getDepartment().getInstitution().getId() : null);
+            UUID userInstId = currentUser.getInstitution() != null
+                    ? currentUser.getInstitution().getId()
+                    : (currentUser.getDepartment() != null && currentUser.getDepartment().getInstitution() != null
+                            ? currentUser.getDepartment().getInstitution().getId() : null);
             if (userInstId == null || !userInstId.equals(equipment.getDepartment().getInstitution().getId())) {
                 throw new SecurityException("You can only update equipment in your own institution.");
             }
@@ -163,7 +187,7 @@ public class EquipmentService {
         equipment.setPricePerHour(request.getPricePerHour() != null ? request.getPricePerHour() : java.math.BigDecimal.ZERO);
         equipment.setDepartment(department);
         equipment.setCategory(category);
-        
+
         Set<Tag> tags = new HashSet<>();
         if (request.getTagIds() != null && !request.getTagIds().isEmpty()) {
             List<Tag> fetchedTags = tagRepository.findAllById(request.getTagIds());
@@ -172,6 +196,12 @@ public class EquipmentService {
         equipment.setTags(tags);
 
         Equipment saved = equipmentRepository.save(equipment);
+
+        // ── NOTIFICATION: Alert dept heads + inst admins about equipment edit ──
+        UUID institutionId = department.getInstitution().getId();
+        String updatedByName = currentUser.getFirstName() + " " + currentUser.getLastName();
+        notificationDispatcher.notifyEquipmentUpdated(institutionId, saved.getId(), saved.getName(), updatedByName);
+
         return mapToResponse(saved);
     }
 

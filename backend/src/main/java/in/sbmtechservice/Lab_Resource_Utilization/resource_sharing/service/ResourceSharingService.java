@@ -13,6 +13,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.enums.AccessR
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.repository.AccessRequestRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.repository.SharedEquipmentListingRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.repository.SharingAgreementRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +33,7 @@ public class ResourceSharingService {
     private final AccessRequestRepository accessRequestRepository;
     private final UserRepository userRepository;
     private final EquipmentRepository equipmentRepository;
+    private final NotificationDispatcher notificationDispatcher;
 
     @Transactional
     public SharedEquipmentListingDto createListing(SharedEquipmentListingDto dto) {
@@ -56,6 +58,11 @@ public class ResourceSharingService {
         SharedEquipmentListing saved = listingRepository.save(listing);
         dto.setId(saved.getId());
         dto.setEquipmentName(equipment.getName());
+
+        // ── NOTIFICATION: Alert system admins a new shared listing was created ──
+        String institutionName = equipment.getDepartment().getInstitution().getName();
+        notificationDispatcher.notifyResourceShareListed(saved.getId(), equipment.getName(), institutionName);
+
         return dto;
     }
 
@@ -87,6 +94,18 @@ public class ResourceSharingService {
         AccessRequest saved = accessRequestRepository.save(request);
         dto.setId(saved.getId());
         dto.setStatus(saved.getStatus());
+
+        // ── NOTIFICATION: Alert the owning institute admins of the incoming request ──
+        UUID ownerInstitutionId = listing.getEquipment().getDepartment().getInstitution().getId();
+        String requesterName = requester.getFirstName() + " " + requester.getLastName();
+        String requesterInstitutionName = requester.getInstitution() != null
+                ? requester.getInstitution().getName()
+                : (requester.getDepartment() != null && requester.getDepartment().getInstitution() != null
+                        ? requester.getDepartment().getInstitution().getName() : "External");
+        notificationDispatcher.notifyAccessRequestSubmitted(
+                ownerInstitutionId, saved.getId(), requesterName,
+                listing.getEquipment().getName(), requesterInstitutionName);
+
         return dto;
     }
 
@@ -102,6 +121,15 @@ public class ResourceSharingService {
         request.setReviewedAt(LocalDateTime.now());
         
         AccessRequest saved = accessRequestRepository.save(request);
+
+        // ── NOTIFICATION: Inform the requester of the decision ──
+        String equipmentName = request.getListing().getEquipment().getName();
+        if (status == AccessRequestStatus.APPROVED) {
+            notificationDispatcher.notifyAccessRequestApproved(request.getRequester(), saved.getId(), equipmentName);
+        } else if (status == AccessRequestStatus.REJECTED) {
+            notificationDispatcher.notifyAccessRequestRejected(request.getRequester(), saved.getId(), equipmentName);
+        }
+
         return mapToAccessRequestDto(saved);
     }
     
