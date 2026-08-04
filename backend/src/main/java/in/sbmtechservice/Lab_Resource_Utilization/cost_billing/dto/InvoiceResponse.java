@@ -22,9 +22,14 @@ public class InvoiceResponse {
     private LocalDate invoiceDate;
     private LocalDate dueDate;
     private BigDecimal totalAmount;
+    private BigDecimal overheadRate;
     private InvoiceStatus status;
+    private String approvedByName;
+    private LocalDateTime approvedAt;
+    private String notes;
     private List<LineItemResponse> lineItems;
     private List<TransactionResponse> transactions;
+
 
     @Data
     @Builder

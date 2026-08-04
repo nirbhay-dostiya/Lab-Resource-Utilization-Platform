@@ -91,4 +91,50 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     @Query("SELECT b FROM Booking b WHERE b.equipment.department.id = :departmentId AND b.status = :status")
     Page<Booking> findByEquipmentDepartmentIdAndStatus(@Param("departmentId") UUID departmentId, @Param("status") BookingStatus status, Pageable pageable);
 
-}
+    // ── Maintenance: find active bookings to cancel when maintenance is scheduled ──
+    @Query("SELECT b FROM Booking b WHERE b.equipment.id = :equipmentId " +
+           "AND b.status IN :statuses AND b.endTime > :afterTime")
+    List<Booking> findByEquipmentIdAndStatusInAndEndTimeAfter(
+            @Param("equipmentId") UUID equipmentId,
+            @Param("statuses") List<BookingStatus> statuses,
+            @Param("afterTime") LocalDateTime afterTime
+    );
+
+    // ── Researcher dashboard: personal upcoming bookings ──
+    @Query("SELECT b FROM Booking b WHERE b.user.id = :userId AND b.startTime >= :from AND b.status IN ('CONFIRMED','PENDING')")
+    List<Booking> findUpcomingByUserId(@Param("userId") UUID userId, @Param("from") LocalDateTime from);
+
+    // ── Researcher dashboard: monthly spend ──
+    @Query("SELECT COALESCE(SUM(li.unitPrice * li.quantity), 0) FROM InvoiceLineItem li " +
+           "WHERE li.invoice.billedToDepartment.id IN " +
+           "(SELECT u.department.id FROM User u WHERE u.id = :userId) " +
+           "AND li.invoice.billingPeriodStart >= :start AND li.invoice.billingPeriodEnd <= :end")
+    java.math.BigDecimal sumMonthlySpendByUser(@Param("userId") UUID userId,
+                                               @Param("start") java.time.LocalDate start,
+                                               @Param("end") java.time.LocalDate end);
+
+    // ── Lab Manager: utilization rate per equipment ──
+    // Uses nativeQuery=true because Hibernate 7 rejects FUNCTION('EXTRACT','EPOCH',...)
+    // in JPQL — the extract() function now requires a strict TEMPORAL_UNIT keyword, not a string.
+    @Query(value = "SELECT b.equipment_id, e.name, " +
+           "SUM(EXTRACT(EPOCH FROM (b.end_time - b.start_time))) / 3600.0 AS hours " +
+           "FROM bookings b " +
+           "JOIN equipment e ON e.id = b.equipment_id " +
+           "JOIN departments d ON d.id = e.department_id " +
+           "JOIN institutions i ON i.id = d.institution_id " +
+           "WHERE i.id = :institutionId " +
+           "AND b.status = 'CONFIRMED' " +
+           "AND b.start_time >= :from " +
+           "GROUP BY b.equipment_id, e.name",
+           nativeQuery = true)
+    List<Object[]> findEquipmentUtilizationHours(@Param("institutionId") UUID institutionId,
+                                                  @Param("from") LocalDateTime from);
+
+
+    // ── Reporting: bookings per equipment in date range ──
+    @Query("SELECT b FROM Booking b WHERE b.equipment.id IN :equipmentIds " +
+           "AND b.startTime >= :from AND b.endTime <= :to")
+    List<Booking> findByEquipmentIdsAndDateRange(@Param("equipmentIds") List<UUID> equipmentIds,
+                                                  @Param("from") LocalDateTime from,
+                                                  @Param("to") LocalDateTime to);
+}

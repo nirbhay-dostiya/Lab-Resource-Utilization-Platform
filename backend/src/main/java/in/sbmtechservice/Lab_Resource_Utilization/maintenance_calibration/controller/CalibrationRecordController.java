@@ -30,4 +30,15 @@ public class CalibrationRecordController {
     public ResponseEntity<java.util.List<CalibrationRecordResponse>> getAllRecords() {
         return ResponseEntity.ok(calibrationService.getAllRecords());
     }
-}
+
+    /**
+     * Compliance Dashboard endpoint.
+     * Returns one record per equipment (the latest), with computed complianceStatus badge.
+     * Badges: COMPLIANT | EXPIRING_SOON | EXPIRED | NON_COMPLIANT
+     */
+    @GetMapping("/compliance-dashboard")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
+    public ResponseEntity<java.util.List<CalibrationRecordResponse>> getComplianceDashboard() {
+        return ResponseEntity.ok(calibrationService.getComplianceDashboard());
+    }
+}

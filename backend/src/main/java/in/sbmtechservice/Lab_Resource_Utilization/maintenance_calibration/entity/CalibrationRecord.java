@@ -53,6 +53,14 @@ public class CalibrationRecord {
     @Column(nullable = false, length = 50)
     private CalibrationStatus status;
 
+    /**
+     * JSON blob for tolerance metrics, e.g.:
+     * {"measurementRange": "0-100 mV", "tolerance": "±0.5%", "referenceStandard": "ISO 9001"}
+     * Stored as TEXT; parsed by the client.
+     */
+    @Column(name = "tolerance_metrics", columnDefinition = "TEXT")
+    private String toleranceMetrics;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -60,4 +68,4 @@ public class CalibrationRecord {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
-}
+}

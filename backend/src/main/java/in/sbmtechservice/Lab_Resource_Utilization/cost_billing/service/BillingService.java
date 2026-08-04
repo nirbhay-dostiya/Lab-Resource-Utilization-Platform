@@ -24,7 +24,9 @@ import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.Notificatio
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationReferenceType;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.repository.NotificationRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.FundingSourceRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +48,8 @@ public class BillingService {
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final FundingSourceRepository fundingSourceRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public String createInvoice(InvoiceRequest request) {
@@ -288,6 +292,10 @@ public class BillingService {
                         .build())
                 .toList() : java.util.Collections.emptyList();
 
+        String approvedByName = invoice.getApprovedBy() != null
+                ? invoice.getApprovedBy().getFirstName() + " " + invoice.getApprovedBy().getLastName()
+                : null;
+
         return InvoiceResponse.builder()
                 .id(invoice.getId())
                 .billedToInstitutionName(invoice.getBilledToInstitution() != null ? invoice.getBilledToInstitution().getName() : null)
@@ -296,8 +304,172 @@ public class BillingService {
                 .dueDate(invoice.getDueDate())
                 .totalAmount(invoice.getTotalAmount())
                 .status(invoice.getStatus())
+                .overheadRate(invoice.getOverheadRate())
+                .approvedByName(approvedByName)
+                .approvedAt(invoice.getApprovedAt())
+                .notes(invoice.getNotes())
                 .lineItems(itemResponses)
                 .transactions(transactionResponses)
                 .build();
     }
-}
+
+    // ── Approval Workflow ─────────────────────────────────────────────────────
+
+    /**
+     * Transitions a DRAFT invoice to PENDING_APPROVAL.
+     */
+    @Transactional
+    public InvoiceResponse submitForApproval(UUID invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + invoiceId));
+
+        if (invoice.getStatus() != in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus.DRAFT) {
+            throw new IllegalStateException("Only DRAFT invoices can be submitted for approval. Current: " + invoice.getStatus());
+        }
+
+        invoice.setStatus(in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus.PENDING_APPROVAL);
+        Invoice saved = invoiceRepository.save(invoice);
+
+        // Notify institution admins
+        if (saved.getBilledToDepartment() != null) {
+            var institutionId = saved.getBilledToDepartment().getInstitution().getId();
+            eventPublisher.publishEvent(new in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents.InvoiceApprovalRequestedEvent(
+                    saved.getId(), institutionId, saved.getTotalAmount().toString()
+            ));
+        }
+
+        return mapToResponse(saved);
+    }
+
+    /**
+     * Transitions PENDING_APPROVAL → APPROVED → ISSUED.
+     * Applies overhead rate to final totalAmount if applicable.
+     */
+    @Transactional
+    public InvoiceResponse approveInvoice(UUID invoiceId, UUID approverId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + invoiceId));
+
+        if (invoice.getStatus() != in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException("Only PENDING_APPROVAL invoices can be approved. Current: " + invoice.getStatus());
+        }
+
+        // Apply inter-institutional overhead rate if set
+        if (invoice.getOverheadRate() != null && invoice.getOverheadRate().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal overhead = invoice.getTotalAmount().multiply(invoice.getOverheadRate());
+            invoice.setTotalAmount(invoice.getTotalAmount().add(overhead));
+        }
+
+        invoice.setStatus(in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus.ISSUED);
+        if (approverId != null) {
+            userRepository.findById(approverId).ifPresent(u -> {
+                invoice.setApprovedBy(u);
+                invoice.setApprovedAt(LocalDateTime.now());
+            });
+        }
+
+        Invoice saved = invoiceRepository.save(invoice);
+
+        // Notify billed department
+        if (saved.getBilledToDepartment() != null) {
+            var institutionId = saved.getBilledToDepartment().getInstitution().getId();
+            eventPublisher.publishEvent(new in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents.InvoiceApprovedEvent(
+                    saved.getId(), saved.getBilledToDepartment().getId(), saved.getTotalAmount().toString()
+            ));
+        }
+
+        return mapToResponse(saved);
+    }
+
+    /**
+     * Auto-generate an invoice by aggregating all CONFIRMED bookings
+     * for a department within the specified billing period.
+     * Applies overhead rate if FundingSource institution differs from host institution.
+     */
+    @Transactional
+    public InvoiceResponse generateAutoInvoice(UUID departmentId,
+                                               java.time.LocalDate periodStart,
+                                               java.time.LocalDate periodEnd,
+                                               UUID fundingSourceId) {
+        var department = departmentRepository.findById(departmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Department not found: " + departmentId));
+
+        // Fetch bookings in period
+        var bookings = bookingRepository.findByEquipmentDepartmentId(departmentId);
+
+        Set<InvoiceLineItem> items = new HashSet<>();
+        BigDecimal total = BigDecimal.ZERO;
+
+        for (var booking : bookings) {
+            if (booking.getStatus() != in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.enums.BookingStatus.CONFIRMED &&
+                    booking.getStatus() != in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.enums.BookingStatus.COMPLETED) {
+                continue;
+            }
+            if (booking.getStartTime().toLocalDate().isBefore(periodStart) ||
+                    booking.getEndTime().toLocalDate().isAfter(periodEnd)) {
+                continue;
+            }
+
+            long hours = java.time.Duration.between(booking.getStartTime(), booking.getEndTime()).toHours();
+            BigDecimal pricePerHour = booking.getEquipment().getPricePerHour();
+            BigDecimal lineTotal = pricePerHour.multiply(BigDecimal.valueOf(Math.max(hours, 1)));
+
+            InvoiceLineItem item = InvoiceLineItem.builder()
+                    .referenceType(ReferenceType.BOOKING)
+                    .referenceId(booking.getId())
+                    .description("Booking: " + booking.getEquipment().getName())
+                    .quantity(BigDecimal.valueOf(Math.max(hours, 1)))
+                    .unitPrice(pricePerHour)
+                    .lineTotal(lineTotal)
+                    .build();
+            items.add(item);
+            total = total.add(lineTotal);
+        }
+
+        // Resolve overhead rate from FundingSource
+        BigDecimal overheadRate = BigDecimal.ZERO;
+        in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.FundingSource fundingSource = null;
+        if (fundingSourceId != null) {
+            fundingSource = fundingSourceRepository.findById(fundingSourceId).orElse(null);
+            if (fundingSource != null && fundingSource.getInstitutionOrigin() != null) {
+                var hostId = department.getInstitution().getId();
+                if (!fundingSource.getInstitutionOrigin().getId().equals(hostId)) {
+                    // External institution → apply 25% overhead (configurable)
+                    overheadRate = new BigDecimal("0.25");
+                }
+            }
+        }
+
+        Invoice invoice = Invoice.builder()
+                .billedToDepartment(department)
+                .invoiceDate(java.time.LocalDate.now())
+                .dueDate(java.time.LocalDate.now().plusDays(30))
+                .billingPeriodStart(periodStart)
+                .billingPeriodEnd(periodEnd)
+                .status(in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus.DRAFT)
+                .totalAmount(total)
+                .overheadRate(overheadRate)
+                .fundingSource(fundingSource)
+                .build();
+
+        Invoice saved = invoiceRepository.save(invoice);
+        for (InvoiceLineItem item : items) {
+            item.setInvoice(saved);
+        }
+        saved.setLineItems(items);
+        invoiceRepository.save(saved);
+
+        return mapToResponse(saved);
+    }
+
+    // ── FundingSource CRUD ────────────────────────────────────────────────────
+
+    public in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.FundingSource saveFundingSource(
+            in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.FundingSource fs) {
+        return fundingSourceRepository.save(fs);
+    }
+
+    public List<in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.FundingSource> getAllFundingSources() {
+        return fundingSourceRepository.findAll();
+    }
+}

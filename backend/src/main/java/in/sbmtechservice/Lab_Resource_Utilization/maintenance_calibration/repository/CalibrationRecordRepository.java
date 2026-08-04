@@ -27,4 +27,14 @@ public interface CalibrationRecordRepository extends JpaRepository<CalibrationRe
             LocalDate startDate,
             LocalDate endDate
     );
-}
+
+    // Cron job: find records expiring on a specific date (for precise 30/14/7/1-day reminders)
+    List<CalibrationRecord> findByExpiryDate(LocalDate expiryDate);
+
+    // All latest records per equipment for compliance dashboard
+    @org.springframework.data.jpa.repository.Query(
+        "SELECT cr FROM CalibrationRecord cr WHERE cr.expiryDate = " +
+        "(SELECT MAX(cr2.expiryDate) FROM CalibrationRecord cr2 WHERE cr2.equipment.id = cr.equipment.id) " +
+        "ORDER BY cr.expiryDate ASC")
+    List<CalibrationRecord> findLatestPerEquipment();
+}

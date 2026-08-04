@@ -5,8 +5,16 @@ import java.util.UUID;
 /**
  * Domain events for the notification system.
  * Emitted by business services to decouple transaction commits from async notification delivery.
+ *
+ * New events added for enterprise feature expansion:
+ *  - AssetDowntimeEvent       (Module 6 — asset.downtime trigger)
+ *  - WorkOrderUrgentEvent     (Module 6 — workorder.urgent trigger)
+ *  - BillingFailedEvent       (Module 6 — billing.failed trigger)
+ *  - CalibrationReminderEvent (Module 2 + Module 6 — calibration.reminder trigger)
  */
 public class NotificationEvents {
+
+    // ── Equipment Events ──────────────────────────────────────────────────────
 
     public record EquipmentAddedEvent(
             UUID institutionId,
@@ -31,6 +39,16 @@ public class NotificationEvents {
             String newStatus,
             String changedByName
     ) {}
+
+    /** Fired when an asset enters downtime (maintenance scheduled). */
+    public record AssetDowntimeEvent(
+            UUID institutionId,
+            UUID equipmentId,
+            String equipmentName,
+            String estimatedDowntimeHours
+    ) {}
+
+    // ── Booking Events ────────────────────────────────────────────────────────
 
     public record BookingPendingApprovalEvent(
             UUID equipmentInstitutionId,
@@ -74,6 +92,8 @@ public class NotificationEvents {
             String equipmentName
     ) {}
 
+    // ── Maintenance / Work Order Events ──────────────────────────────────────
+
     public record MaintenanceScheduledEvent(
             UUID technicianId,
             UUID institutionId,
@@ -87,6 +107,53 @@ public class NotificationEvents {
             UUID taskId,
             String equipmentName
     ) {}
+
+    /** Fired for HIGH/CRITICAL priority work orders on state transitions. */
+    public record WorkOrderUrgentEvent(
+            UUID institutionId,
+            UUID workOrderId,
+            String equipmentName,
+            String priority,
+            String currentStatus
+    ) {}
+
+    // ── Calibration Events ────────────────────────────────────────────────────
+
+    /**
+     * Fired by CalibrationReminderScheduler at 30, 14, 7, and 1 day(s) before expiry.
+     * daysUntilExpiry distinguishes which reminder stage this is.
+     */
+    public record CalibrationReminderEvent(
+            UUID institutionId,
+            UUID calibrationRecordId,
+            UUID equipmentId,
+            String equipmentName,
+            String expiryDate,
+            int daysUntilExpiry
+    ) {}
+
+    // ── Billing Events ────────────────────────────────────────────────────────
+
+    public record BillingFailedEvent(
+            UUID invoiceId,
+            UUID departmentId,
+            UUID institutionId,
+            String reason
+    ) {}
+
+    public record InvoiceApprovalRequestedEvent(
+            UUID invoiceId,
+            UUID institutionId,
+            String invoiceAmount
+    ) {}
+
+    public record InvoiceApprovedEvent(
+            UUID invoiceId,
+            UUID issuedToDepartmentId,
+            String invoiceAmount
+    ) {}
+
+    // ── Resource Sharing Events ───────────────────────────────────────────────
 
     public record ResourceShareListedEvent(
             UUID listingId,

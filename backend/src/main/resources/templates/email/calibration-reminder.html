@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Calibration Reminder</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background:#f0f4ff; margin:0; padding:0; }
+  .wrapper { max-width:600px; margin:32px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,.08); }
+  .header { background:linear-gradient(135deg,#4f46e5,#7c3aed); padding:28px 32px; color:#fff; }
+  .header h1 { margin:0; font-size:22px; }
+  .badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700; margin-top:8px; }
+  .badge.CRITICAL { background:#ef4444; color:#fff; }
+  .badge.HIGH     { background:#f59e0b; color:#fff; }
+  .badge.NORMAL   { background:#10b981; color:#fff; }
+  .body { padding:32px; }
+  .info-box { background:#f8faff; border-left:4px solid #4f46e5; padding:16px 20px; border-radius:0 8px 8px 0; margin:20px 0; }
+  .info-box p { margin:4px 0; font-size:14px; color:#374151; }
+  .info-box strong { color:#1e1b4b; }
+  .days-badge { font-size:48px; font-weight:800; color:#4f46e5; text-align:center; margin:16px 0; }
+  .cta { display:block; width:fit-content; margin:24px auto; padding:12px 32px; background:#4f46e5; color:#fff !important; border-radius:8px; text-decoration:none; font-weight:700; font-size:15px; }
+  .footer { background:#f9fafb; padding:20px 32px; font-size:12px; color:#9ca3af; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <h1>⚠️ Calibration Reminder</h1>
+    <span th:class="'badge ' + ${urgency}" th:text="${urgency}">NORMAL</span>
+  </div>
+  <div class="body">
+    <p>This is an automated reminder that the following equipment requires calibration renewal.</p>
+
+    <div class="days-badge" th:text="${daysLeft} + ' Day(s)'">30 Day(s)</div>
+
+    <div class="info-box">
+      <p><strong>Equipment:</strong> <span th:text="${equipmentName}">Name</span></p>
+      <p><strong>Calibration Expiry:</strong> <span th:text="${expiryDate}">2025-01-01</span></p>
+      <p><strong>Days Remaining:</strong> <span th:text="${daysLeft}">30</span> day(s)</p>
+    </div>
+
+    <p style="color:#6b7280; font-size:14px;">
+      Please schedule calibration immediately to maintain compliance and avoid equipment lockout.
+    </p>
+
+    <a href="#" class="cta">View Calibration Records</a>
+  </div>
+  <div class="footer">
+    Lab Resource Management System &bull; This is an automated notification. Do not reply.
+  </div>
+</div>
+</body>
+</html>

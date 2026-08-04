@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head><meta charset="UTF-8"/><title>Invoice Pending Approval</title>
+<style>
+  body{font-family:'Segoe UI',Arial,sans-serif;background:#f0fdf4;margin:0;padding:0;}
+  .wrapper{max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);}
+  .header{background:linear-gradient(135deg,#059669,#047857);padding:28px 32px;color:#fff;}
+  .header h1{margin:0;font-size:22px;}
+  .body{padding:32px;}
+  .amount{font-size:42px;font-weight:800;color:#059669;text-align:center;margin:16px 0;}
+  .info-box{background:#f0fdf4;border-left:4px solid #059669;padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0;}
+  .info-box p{margin:4px 0;font-size:14px;color:#374151;}
+  .cta{display:block;width:fit-content;margin:24px auto;padding:12px 32px;background:#059669;color:#fff !important;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;}
+  .footer{background:#f9fafb;padding:20px 32px;font-size:12px;color:#9ca3af;text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header"><h1>📄 Invoice Pending Your Approval</h1></div>
+  <div class="body">
+    <p>A new invoice has been submitted and requires your approval before it is issued.</p>
+    <div class="amount" th:text="'₹' + ${amount}">₹0.00</div>
+    <div class="info-box">
+      <p><strong>Invoice ID:</strong> <span th:text="${invoiceId}">—</span></p>
+      <p><strong>Total Amount:</strong> ₹<span th:text="${amount}">0.00</span></p>
+    </div>
+    <p style="color:#6b7280;font-size:14px;">Please log in to the platform to review line items and approve or reject this invoice.</p>
+    <a href="#" class="cta">Review &amp; Approve Invoice</a>
+  </div>
+  <div class="footer">Lab Resource Management System &bull; Automated notification. Do not reply.</div>
+</div>
+</body>
+</html>

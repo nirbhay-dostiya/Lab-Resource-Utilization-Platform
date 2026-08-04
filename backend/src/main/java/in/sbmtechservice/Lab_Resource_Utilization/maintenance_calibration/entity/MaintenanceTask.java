@@ -2,6 +2,7 @@ package in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.entit
 
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.entity.Equipment;
+import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.enums.MaintenancePriority;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.enums.MaintenanceStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.enums.MaintenanceType;
 import jakarta.persistence.*;
@@ -13,6 +14,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Work Order / Maintenance Task entity.
+ * Lifecycle enforced via state-machine in MaintenanceTaskService.
+ */
 @Entity
 @Table(name = "maintenance_tasks")
 @Getter
@@ -28,15 +33,20 @@ public class MaintenanceTask {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    // Many-to-One relationship with Equipment (from Module 3)
+    /** The asset this work order is raised against. */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "equipment_id", nullable = false)
     private Equipment equipment;
 
-    // Many-to-One relationship with User (Technician, from Module 1)
+    /** Assigned technician (may be null until ASSIGNED state). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "technician_id")
     private User technician;
+
+    /** The user who raised / requested this work order. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "requester_id")
+    private User requester;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "maintenance_type", nullable = false, length = 50)
@@ -44,7 +54,14 @@ public class MaintenanceTask {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private MaintenanceStatus status;
+    @Builder.Default
+    private MaintenanceStatus status = MaintenanceStatus.CREATED;
+
+    /** Work order priority — drives urgency coloring on Kanban board. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private MaintenancePriority priority = MaintenancePriority.MEDIUM;
 
     @Column(name = "scheduled_date", nullable = false)
     private LocalDateTime scheduledDate;
@@ -57,6 +74,14 @@ public class MaintenanceTask {
 
     @Column(name = "resolution_notes", columnDefinition = "TEXT")
     private String resolutionNotes;
+
+    /**
+     * Total downtime in hours caused by this maintenance event.
+     * Used for OEE / idle-cost calculations in Module 5.
+     */
+    @Column(name = "downtime_hours", precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal downtimeHours = BigDecimal.ZERO;
 
     @Column(precision = 10, scale = 2, nullable = false)
     @Builder.Default

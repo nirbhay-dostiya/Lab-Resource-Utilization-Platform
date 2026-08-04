@@ -1,5 +1,6 @@
 package in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity;
 
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution;
@@ -58,6 +59,36 @@ public class Invoice {
 
     @Column(name = "billing_period_end", nullable = false)
     private LocalDate billingPeriodEnd;
+
+    /**
+     * Overhead/tax rate applied to inter-institutional invoices.
+     * e.g., 0.25 = 25% overhead surcharge for external institutions.
+     */
+    @Column(name = "overhead_rate", precision = 5, scale = 4)
+    @Builder.Default
+    private BigDecimal overheadRate = BigDecimal.ZERO;
+
+    /**
+     * The funding source linked to this invoice (grant/PO number, institution origin).
+     * Null for internal department chargebacks.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "funding_source_id")
+    private FundingSource fundingSource;
+
+    /**
+     * User who approved this invoice (LAB_MANAGER / DEPT_HEAD / INSTITUTION_ADMIN).
+     * Null until moved to APPROVED state.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by_id")
+    private User approvedBy;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

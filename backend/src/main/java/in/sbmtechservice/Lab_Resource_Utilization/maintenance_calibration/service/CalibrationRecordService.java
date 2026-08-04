@@ -12,7 +12,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -41,27 +45,61 @@ public class CalibrationRecordService {
                 .expiryDate(request.getExpiryDate())
                 .certificateUrl(request.getCertificateUrl())
                 .status(request.getStatus())
+                .toleranceMetrics(request.getToleranceMetrics())
                 .build();
 
         CalibrationRecord saved = calibrationRepository.save(record);
         return mapToResponse(saved);
     }
 
-    public java.util.List<CalibrationRecordResponse> getRecordsByEquipment(UUID equipmentId) {
+    public List<CalibrationRecordResponse> getRecordsByEquipment(UUID equipmentId) {
         return calibrationRepository.findByEquipmentIdOrderByCalibrationDateDesc(equipmentId).stream()
                 .map(this::mapToResponse)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
     }
 
-    public java.util.List<CalibrationRecordResponse> getAllRecords() {
+    public List<CalibrationRecordResponse> getAllRecords() {
         return calibrationRepository.findAll().stream()
                 .map(this::mapToResponse)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
     }
 
-    private CalibrationRecordResponse mapToResponse(CalibrationRecord record) {
-        String techName = record.getCalibratedBy() != null ?
-                record.getCalibratedBy().getFirstName() + " " + record.getCalibratedBy().getLastName() : record.getVendorName();
+    /**
+     * Compliance Dashboard query — returns one record per equipment (the latest),
+     * with a computed complianceStatus badge for the frontend.
+     *
+     * Badge logic:
+     *  - EXPIRED:        expiryDate < today
+     *  - EXPIRING_SOON:  expiryDate <= today + 30 days
+     *  - COMPLIANT:      expiryDate > today + 30 days
+     *  - NON_COMPLIANT:  calibration status == FAIL (regardless of date)
+     */
+    public List<CalibrationRecordResponse> getComplianceDashboard() {
+        LocalDate today = LocalDate.now();
+        return calibrationRepository.findLatestPerEquipment().stream()
+                .map(record -> {
+                    CalibrationRecordResponse resp = mapToResponse(record);
+                    long daysUntilExpiry = ChronoUnit.DAYS.between(today, record.getExpiryDate());
+
+                    if ("FAIL".equalsIgnoreCase(record.getStatus().name())) {
+                        resp.setComplianceStatus("NON_COMPLIANT");
+                    } else if (daysUntilExpiry < 0) {
+                        resp.setComplianceStatus("EXPIRED");
+                    } else if (daysUntilExpiry <= 30) {
+                        resp.setComplianceStatus("EXPIRING_SOON");
+                    } else {
+                        resp.setComplianceStatus("COMPLIANT");
+                    }
+                    resp.setDaysUntilExpiry(daysUntilExpiry);
+                    return resp;
+                })
+                .collect(Collectors.toList());
+    }
+
+    public CalibrationRecordResponse mapToResponse(CalibrationRecord record) {
+        String techName = record.getCalibratedBy() != null
+                ? record.getCalibratedBy().getFirstName() + " " + record.getCalibratedBy().getLastName()
+                : record.getVendorName();
 
         return CalibrationRecordResponse.builder()
                 .id(record.getId())
@@ -73,6 +111,7 @@ public class CalibrationRecordService {
                 .nextDueDate(record.getExpiryDate())
                 .certificateUrl(record.getCertificateUrl())
                 .result(record.getStatus().name())
+                .toleranceMetrics(record.getToleranceMetrics())
                 .build();
     }
 }

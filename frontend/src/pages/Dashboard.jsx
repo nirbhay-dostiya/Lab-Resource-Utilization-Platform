@@ -37,6 +37,11 @@ class ErrorBoundary extends React.Component {
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
+
+  const hasRole = (roleName) => user?.roles?.includes(roleName) || user?.authorities?.includes(roleName) || user?.authorities?.some(auth => auth.authority === roleName);
+  const isSystemAdmin = user?.roles?.includes('SYSTEM_ADMIN') || user?.authorities?.some(auth => auth.authority === 'SYSTEM_ADMIN');
+  const canManage = isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER');
+
   const [institutions, setInstitutions] = useState([]);
   const [isFetchingInstitutions, setIsFetchingInstitutions] = useState(false);
 
@@ -191,10 +196,219 @@ const Dashboard = () => {
   const [selectedTransactionDetails, setSelectedTransactionDetails] = useState(null);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
 
-  const isSystemAdmin = user?.roles?.includes('SYSTEM_ADMIN') || user?.authorities?.some(auth => auth.authority === 'SYSTEM_ADMIN');
+  // ── Module 1: Work Order State ─────────────────────────────────────────────
+  const [workOrderForm, setWorkOrderForm] = useState({
+    equipmentId: '', taskType: 'PREVENTIVE', priority: 'MEDIUM',
+    description: '', scheduledDate: '', technicianId: ''
+  });
+  const [isSubmittingWorkOrder, setIsSubmittingWorkOrder] = useState(false);
+  const [workOrderStatusFilter, setWorkOrderStatusFilter] = useState('ALL');
+  const [showWorkOrderForm, setShowWorkOrderForm] = useState(false);
+  const [workOrderTransition, setWorkOrderTransition] = useState({ id: null, targetStatus: '', notes: '', downtimeHours: '' });
+  const [showTransitionModal, setShowTransitionModal] = useState(false);
+
+  // ── Module 2: Calibration Compliance State ─────────────────────────────────
+  const [complianceDashboard, setComplianceDashboard] = useState([]);
+  const [isFetchingCompliance, setIsFetchingCompliance] = useState(false);
+  const [calibrationForm, setCalibrationForm] = useState({
+    equipmentId: '', calibrationDate: '', expiryDate: '',
+    vendorName: '', status: 'PASS', certificateUrl: '', toleranceMetrics: ''
+  });
+  const [showCalibrationForm, setShowCalibrationForm] = useState(false);
+  const [isSubmittingCalibration, setIsSubmittingCalibration] = useState(false);
+
+  // ── Module 3: Billing Approval State ──────────────────────────────────────
+  const [isApprovingInvoice, setIsApprovingInvoice] = useState(false);
+  const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false);
+  const [autoInvoiceForm, setAutoInvoiceForm] = useState({
+    periodStart: '', periodEnd: '', fundingSourceId: ''
+  });
+  const [showAutoInvoiceForm, setShowAutoInvoiceForm] = useState(false);
+  const [fundingSources, setFundingSources] = useState([]);
+
+  // ── Module 4: Persona Analytics State ─────────────────────────────────────
+  const [researcherDashboard, setResearcherDashboard] = useState(null);
+  const [labManagerDashboard, setLabManagerDashboard] = useState(null);
+  const [systemAdminDashboard, setSystemAdminDashboard] = useState(null);
+  const [isFetchingPersonaDashboard, setIsFetchingPersonaDashboard] = useState(false);
+
+  // ── Module 5: OEE Report State ─────────────────────────────────────────────
+  const [reportForm, setReportForm] = useState({ from: '', to: '' });
+  const [reportId, setReportId] = useState(null);
+  const [reportStatus, setReportStatus] = useState('');
+  const [reportResult, setReportResult] = useState(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [activeReportTab, setActiveReportTab] = useState('generate'); // 'generate' | 'results'
+  const reportPollRef = useRef(null);
+
+  // ── New enterprise fetch functions ─────────────────────────────────────────
+
+  const fetchComplianceDashboard = async () => {
+    setIsFetchingCompliance(true);
+    try {
+      const res = await api.get('/calibration/compliance-dashboard');
+      setComplianceDashboard(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to fetch compliance dashboard', err);
+    } finally {
+      setIsFetchingCompliance(false);
+    }
+  };
+
+  const fetchFundingSources = async () => {
+    try {
+      const res = await api.get('/billing/funding-sources');
+      setFundingSources(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to fetch funding sources', err);
+    }
+  };
+
+  const fetchPersonaDashboard = async () => {
+    setIsFetchingPersonaDashboard(true);
+    try {
+      if (isSystemAdmin) {
+        const res = await api.get('/analytics/dashboard/system-admin');
+        setSystemAdminDashboard(res.data);
+      } else if (hasRole('LAB_MANAGER') || hasRole('DEPT_HEAD') || hasRole('INSTITUTION_ADMIN')) {
+        if (selectedInstitution) {
+          const res = await api.get(`/analytics/dashboard/lab-manager?institutionId=${selectedInstitution}`);
+          setLabManagerDashboard(res.data);
+        }
+      } else if (user?.id) {
+        const res = await api.get(`/analytics/dashboard/researcher?userId=${user.id}`);
+        setResearcherDashboard(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch persona dashboard', err);
+    } finally {
+      setIsFetchingPersonaDashboard(false);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    if (!reportForm.from || !reportForm.to) { alert('Please select a date range.'); return; }
+    setIsGeneratingReport(true);
+    setReportStatus('PENDING');
+    setReportResult(null);
+    try {
+      const res = await api.post(`/reports/generate?from=${reportForm.from}&to=${reportForm.to}`);
+      const rid = res.data.reportId;
+      setReportId(rid);
+      // Poll every 2 seconds
+      reportPollRef.current = setInterval(async () => {
+        try {
+          const s = await api.get(`/reports/${rid}/status`);
+          setReportStatus(s.data.status);
+          if (s.data.status === 'DONE') {
+            clearInterval(reportPollRef.current);
+            setIsGeneratingReport(false);
+            setActiveReportTab('results');
+            // Fetch inline result for display
+            const result = await api.get(`/reports/inline?from=${reportForm.from}&to=${reportForm.to}`);
+            setReportResult(result.data);
+          } else if (s.data.status === 'FAILED') {
+            clearInterval(reportPollRef.current);
+            setIsGeneratingReport(false);
+            alert('Report generation failed. Please try again.');
+          }
+        } catch (pollErr) { clearInterval(reportPollRef.current); setIsGeneratingReport(false); }
+      }, 2000);
+    } catch (err) {
+      setIsGeneratingReport(false);
+      alert('Failed to start report: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleSubmitWorkOrder = async () => {
+    if (!workOrderForm.equipmentId || !workOrderForm.scheduledDate) {
+      alert('Equipment and scheduled date are required.'); return;
+    }
+    setIsSubmittingWorkOrder(true);
+    try {
+      await api.post('/maintenance', {
+        equipmentId: workOrderForm.equipmentId,
+        taskType: workOrderForm.taskType,
+        priority: workOrderForm.priority,
+        description: workOrderForm.description,
+        scheduledDate: workOrderForm.scheduledDate + 'T08:00:00',
+        technicianId: workOrderForm.technicianId || null,
+      });
+      setShowWorkOrderForm(false);
+      setWorkOrderForm({ equipmentId: '', taskType: 'PREVENTIVE', priority: 'MEDIUM', description: '', scheduledDate: '', technicianId: '' });
+      fetchMaintenanceTasks();
+      alert('Work order created successfully!');
+    } catch (err) {
+      alert('Failed to create work order: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setIsSubmittingWorkOrder(false);
+    }
+  };
+
+  const handleWorkOrderTransition = async () => {
+    if (!workOrderTransition.id || !workOrderTransition.targetStatus) return;
+    try {
+      await api.patch(`/maintenance/${workOrderTransition.id}/transition?targetStatus=${workOrderTransition.targetStatus}` +
+        (workOrderTransition.notes ? `&resolutionNotes=${encodeURIComponent(workOrderTransition.notes)}` : '') +
+        (workOrderTransition.downtimeHours ? `&downtimeHours=${workOrderTransition.downtimeHours}` : ''));
+      setShowTransitionModal(false);
+      setWorkOrderTransition({ id: null, targetStatus: '', notes: '', downtimeHours: '' });
+      fetchMaintenanceTasks();
+    } catch (err) {
+      alert('Transition failed: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleLogCalibration = async () => {
+    if (!calibrationForm.equipmentId || !calibrationForm.calibrationDate || !calibrationForm.expiryDate) {
+      alert('Equipment, calibration date, and expiry date are required.'); return;
+    }
+    setIsSubmittingCalibration(true);
+    try {
+      await api.post('/calibration', {
+        equipmentId: calibrationForm.equipmentId,
+        calibrationDate: calibrationForm.calibrationDate,
+        expiryDate: calibrationForm.expiryDate,
+        vendorName: calibrationForm.vendorName || null,
+        status: calibrationForm.status,
+        certificateUrl: calibrationForm.certificateUrl || null,
+        toleranceMetrics: calibrationForm.toleranceMetrics || null,
+      });
+      setShowCalibrationForm(false);
+      setCalibrationForm({ equipmentId: '', calibrationDate: '', expiryDate: '', vendorName: '', status: 'PASS', certificateUrl: '', toleranceMetrics: '' });
+      fetchCalibrationRecords();
+      fetchComplianceDashboard();
+      alert('Calibration record logged successfully!');
+    } catch (err) {
+      alert('Failed to log calibration: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setIsSubmittingCalibration(false);
+    }
+  };
+
+  const handleGenerateAutoInvoice = async () => {
+    if (!selectedDepartment || !autoInvoiceForm.periodStart || !autoInvoiceForm.periodEnd) {
+      alert('Select a department and billing period.'); return;
+    }
+    try {
+      const params = new URLSearchParams({
+        departmentId: selectedDepartment,
+        periodStart: autoInvoiceForm.periodStart,
+        periodEnd: autoInvoiceForm.periodEnd,
+        ...(autoInvoiceForm.fundingSourceId ? { fundingSourceId: autoInvoiceForm.fundingSourceId } : {})
+      });
+      await api.post(`/billing/invoices/generate-auto?${params}`);
+      setShowAutoInvoiceForm(false);
+      fetchInvoices();
+      alert('Auto-invoice generated successfully!');
+    } catch (err) {
+      alert('Failed: ' + (err.response?.data?.message || err.message));
+    }
+  };
 
   useEffect(() => {
     if (isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER')) {
+
       fetchInstitutions();
       fetchAllUsers();
       fetchCategories();
@@ -251,15 +465,22 @@ const Dashboard = () => {
     if (activeSection === 'maintenance') {
       fetchMaintenanceTasks();
       fetchCalibrationRecords();
+      if (canManage) fetchComplianceDashboard();
     }
     if (activeSection === 'billing') {
       fetchInvoices();
+      fetchFundingSources();
       if (selectedDepartment) fetchBudgets();
     }
     if (activeSection === 'analytics') {
       fetchAnalyticsData();
+      fetchPersonaDashboard();
+    }
+    if (activeSection === 'reports') {
+      // No auto-fetch — user initiates report generation
     }
   }, [activeSection, isSystemAdmin, selectedDepartment, selectedInstitution, equipmentList.length]);
+
 
   const fetchMaintenanceTasks = async () => {
     try {
@@ -473,8 +694,6 @@ const Dashboard = () => {
       bookings: count
     })).sort((a, b) => b.bookings - a.bookings).slice(0, 5);
   }, [bookingsList]);
-
-  const hasRole = (roleName) => user?.roles?.includes(roleName) || user?.authorities?.includes(roleName) || user?.authorities?.some(auth => auth.authority === roleName);
 
   const fetchWaitlists = async () => {
     if (!user?.id) return;
@@ -1149,8 +1368,15 @@ const Dashboard = () => {
             <span>Utilization Analytics</span>
           </button>
         )}
+        {(isSystemAdmin || hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD') || hasRole('LAB_MANAGER')) && (
+          <button onClick={() => setActiveSection('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'reports' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
+            <FileText size={20} />
+            <span>OEE Reports</span>
+          </button>
+        )}
       </>
     )}
+
 
     {(isSystemAdmin || hasRole('INSTITUTION_ADMIN')) && (
       <button onClick={() => setActiveSection('users')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'users' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
@@ -1359,7 +1585,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      {activeSection !== 'profile' && activeSection !== 'maintenance' && activeSection !== 'billing' && activeSection !== 'analytics' && (
+      {activeSection !== 'profile' && activeSection !== 'maintenance' && activeSection !== 'billing' && activeSection !== 'analytics' && activeSection !== 'reports' && (
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2 text-gray-800">Dashboard</h1>
           <p className="text-gray-500">Welcome to your Lab Resource Utilization Platform.</p>
@@ -3139,11 +3365,408 @@ const Dashboard = () => {
               </tbody>
             </table>
           </div>
+
+          {/* ── Module 1 Enhancement: Work Order Create Form ──────────────── */}
+          {canManage && (
+            <div className="mt-10">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
+                  <Settings size={22} className="text-indigo-500" /> Work Order Management
+                </h2>
+                <button
+                  onClick={() => setShowWorkOrderForm(v => !v)}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                >
+                  <Plus size={16} /> {showWorkOrderForm ? 'Cancel' : 'New Work Order'}
+                </button>
+              </div>
+
+              {showWorkOrderForm && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 mb-6 animate-fade-in">
+                  <h3 className="font-semibold text-indigo-800 mb-4">Create Work Order</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <select value={workOrderForm.equipmentId} onChange={e => setWorkOrderForm(f => ({...f, equipmentId: e.target.value}))}
+                      className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400">
+                      <option value="">Select Equipment *</option>
+                      {equipmentList.map(eq => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
+                    </select>
+                    <select value={workOrderForm.taskType} onChange={e => setWorkOrderForm(f => ({...f, taskType: e.target.value}))}
+                      className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400">
+                      <option value="PREVENTIVE">Preventive</option>
+                      <option value="CORRECTIVE">Corrective</option>
+                      <option value="EMERGENCY">Emergency</option>
+                    </select>
+                    <select value={workOrderForm.priority} onChange={e => setWorkOrderForm(f => ({...f, priority: e.target.value}))}
+                      className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400">
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                      <option value="CRITICAL">Critical</option>
+                    </select>
+                    <input type="date" value={workOrderForm.scheduledDate} onChange={e => setWorkOrderForm(f => ({...f, scheduledDate: e.target.value}))}
+                      className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400"
+                      placeholder="Scheduled Date *" />
+                    <select value={workOrderForm.technicianId} onChange={e => setWorkOrderForm(f => ({...f, technicianId: e.target.value}))}
+                      className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400">
+                      <option value="">Assign Technician (optional)</option>
+                      {usersList.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
+                    </select>
+                    <textarea value={workOrderForm.description} onChange={e => setWorkOrderForm(f => ({...f, description: e.target.value}))}
+                      placeholder="Description / Notes"
+                      className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400 md:col-span-2" rows={2} />
+                  </div>
+                  <div className="flex justify-end mt-4">
+                    <button onClick={handleSubmitWorkOrder} disabled={isSubmittingWorkOrder}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-semibold text-sm disabled:opacity-60 flex items-center gap-2">
+                      {isSubmittingWorkOrder ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      Submit Work Order
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Work Order table with status filter + transition actions */}
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {['ALL','CREATED','ASSIGNED','IN_PROGRESS','COMPLETED','VERIFIED'].map(s => (
+                  <button key={s} onClick={() => setWorkOrderStatusFilter(s)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${workOrderStatusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500 uppercase text-xs tracking-wider bg-gray-50">
+                      <th className="py-3 px-4 font-semibold">Equipment</th>
+                      <th className="py-3 px-4 font-semibold">Type</th>
+                      <th className="py-3 px-4 font-semibold">Priority</th>
+                      <th className="py-3 px-4 font-semibold">Status</th>
+                      <th className="py-3 px-4 font-semibold">Scheduled</th>
+                      <th className="py-3 px-4 font-semibold">Downtime Hr</th>
+                      <th className="py-3 px-4 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(Array.isArray(maintenanceTasks) ? maintenanceTasks : [])
+                      .filter(t => workOrderStatusFilter === 'ALL' || t.status === workOrderStatusFilter)
+                      .map(task => (
+                        <tr key={task.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                          <td className="py-3 px-4 font-medium text-gray-800">{task.equipmentName}</td>
+                          <td className="py-3 px-4 text-gray-600">{task.taskType}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              task.priority === 'CRITICAL' ? 'bg-red-100 text-red-700' :
+                              task.priority === 'HIGH' ? 'bg-orange-100 text-orange-700' :
+                              task.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{task.priority}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              task.status === 'COMPLETED' || task.status === 'VERIFIED' ? 'bg-green-100 text-green-700' :
+                              task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                              task.status === 'ASSIGNED' ? 'bg-purple-100 text-purple-700' :
+                              'bg-yellow-100 text-yellow-700'
+                            }`}>{task.status?.replace('_',' ')}</span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-600">{task.scheduledDate ? new Date(task.scheduledDate).toLocaleDateString() : '-'}</td>
+                          <td className="py-3 px-4 text-gray-600">{task.downtimeHours ?? '-'}</td>
+                          <td className="py-3 px-4">
+                            {task.status !== 'VERIFIED' && (
+                              <button
+                                onClick={() => { setWorkOrderTransition({id: task.id, targetStatus: '', notes: '', downtimeHours: ''}); setShowTransitionModal(true); }}
+                                className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-semibold transition-colors">
+                                Update Status
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                    ))}
+                    {(maintenanceTasks || []).filter(t => workOrderStatusFilter === 'ALL' || t.status === workOrderStatusFilter).length === 0 && (
+                      <tr><td colSpan="7" className="py-8 text-center text-gray-400 bg-gray-50">No work orders match the filter.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Module 2 Enhancement: Calibration Compliance Dashboard ──────── */}
+          {canManage && (
+            <div className="mt-10">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
+                  <CheckCircle size={22} className="text-teal-500" /> Calibration Compliance
+                </h2>
+                <button onClick={() => setShowCalibrationForm(v => !v)}
+                  className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                  <Plus size={16} /> {showCalibrationForm ? 'Cancel' : 'Log Calibration'}
+                </button>
+              </div>
+
+              {showCalibrationForm && (
+                <div className="bg-teal-50 border border-teal-100 rounded-2xl p-6 mb-6 animate-fade-in">
+                  <h3 className="font-semibold text-teal-800 mb-4">Log New Calibration Record</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <select value={calibrationForm.equipmentId} onChange={e => setCalibrationForm(f => ({...f, equipmentId: e.target.value}))}
+                      className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400">
+                      <option value="">Select Equipment *</option>
+                      {equipmentList.map(eq => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
+                    </select>
+                    <input type="date" value={calibrationForm.calibrationDate} onChange={e => setCalibrationForm(f => ({...f, calibrationDate: e.target.value}))}
+                      placeholder="Calibration Date *" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
+                    <input type="date" value={calibrationForm.expiryDate} onChange={e => setCalibrationForm(f => ({...f, expiryDate: e.target.value}))}
+                      placeholder="Expiry Date *" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
+                    <input type="text" value={calibrationForm.vendorName} onChange={e => setCalibrationForm(f => ({...f, vendorName: e.target.value}))}
+                      placeholder="Vendor / Lab Name" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
+                    <select value={calibrationForm.status} onChange={e => setCalibrationForm(f => ({...f, status: e.target.value}))}
+                      className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400">
+                      <option value="PASS">PASS</option>
+                      <option value="FAIL">FAIL</option>
+                      <option value="CONDITIONAL">CONDITIONAL</option>
+                    </select>
+                    <input type="url" value={calibrationForm.certificateUrl} onChange={e => setCalibrationForm(f => ({...f, certificateUrl: e.target.value}))}
+                      placeholder="Certificate URL" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
+                    <textarea value={calibrationForm.toleranceMetrics} onChange={e => setCalibrationForm(f => ({...f, toleranceMetrics: e.target.value}))}
+                      placeholder='Tolerance Metrics JSON (e.g. {"accuracy": "±0.02%"})'
+                      className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400 md:col-span-2" rows={2} />
+                  </div>
+                  <div className="flex justify-end mt-4">
+                    <button onClick={handleLogCalibration} disabled={isSubmittingCalibration}
+                      className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-2.5 rounded-xl font-semibold text-sm disabled:opacity-60 flex items-center gap-2">
+                      {isSubmittingCalibration ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      Save Calibration
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isFetchingCompliance ? (
+                <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-teal-500" /></div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {complianceDashboard.map((item, i) => {
+                    const daysLeft = item.daysUntilExpiry ?? 999;
+                    const urgency = daysLeft <= 7 ? 'CRITICAL' : daysLeft <= 14 ? 'HIGH' : daysLeft <= 30 ? 'WARNING' : 'OK';
+                    const colors = { CRITICAL: 'border-red-400 bg-red-50', HIGH: 'border-orange-400 bg-orange-50', WARNING: 'border-yellow-400 bg-yellow-50', OK: 'border-green-400 bg-green-50' };
+                    const badges = { CRITICAL: 'bg-red-100 text-red-700', HIGH: 'bg-orange-100 text-orange-700', WARNING: 'bg-yellow-100 text-yellow-700', OK: 'bg-green-100 text-green-700' };
+                    return (
+                      <div key={i} className={`border-l-4 rounded-2xl p-5 ${colors[urgency]}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="font-bold text-gray-800 text-sm">{item.equipmentName}</div>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badges[urgency]}`}>{urgency}</span>
+                        </div>
+                        <div className="text-2xl font-black text-gray-700">{daysLeft < 999 ? daysLeft : '—'}<span className="text-sm font-medium text-gray-500 ml-1">days left</span></div>
+                        <div className="text-xs text-gray-500 mt-2">Expires: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'N/A'}</div>
+                        <div className="text-xs text-gray-500">Vendor: {item.vendorName || 'N/A'}</div>
+                        <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${item.lastResult === 'PASS' ? 'bg-green-100 text-green-700' : item.lastResult === 'FAIL' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                          Last: {item.lastResult || 'N/A'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {complianceDashboard.length === 0 && (
+                    <div className="col-span-3 py-8 text-center text-gray-400 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                      No compliance data available.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── Work Order Status Transition Modal ──────────────────────────────── */}
+      {showTransitionModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowTransitionModal(false)}>
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold mb-4 text-gray-800">Update Work Order Status</h3>
+            <div className="flex flex-col gap-3">
+              <select value={workOrderTransition.targetStatus} onChange={e => setWorkOrderTransition(t => ({...t, targetStatus: e.target.value}))}
+                className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400">
+                <option value="">Select Next Status *</option>
+                <option value="ASSIGNED">ASSIGNED</option>
+                <option value="IN_PROGRESS">IN_PROGRESS</option>
+                <option value="COMPLETED">COMPLETED</option>
+                <option value="VERIFIED">VERIFIED</option>
+              </select>
+              <input type="number" min="0" step="0.5" placeholder="Downtime Hours (if any)"
+                value={workOrderTransition.downtimeHours} onChange={e => setWorkOrderTransition(t => ({...t, downtimeHours: e.target.value}))}
+                className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400" />
+              <textarea placeholder="Resolution Notes" value={workOrderTransition.notes} onChange={e => setWorkOrderTransition(t => ({...t, notes: e.target.value}))}
+                className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400" rows={3} />
+              <div className="flex gap-3 justify-end mt-2">
+                <button onClick={() => setShowTransitionModal(false)} className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+                <button onClick={handleWorkOrderTransition} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold">Update Status</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Module 5: OEE Reports Section ───────────────────────────────────── */}
+      {activeSection === 'reports' && (
+        <section className="flex flex-col gap-6 animate-fade-in">
+          {/* Tab switcher */}
+          <div className="bg-white rounded-2xl p-2 shadow-sm border border-gray-100 flex gap-2 w-fit">
+            {['generate', 'results'].map(tab => (
+              <button key={tab} onClick={() => setActiveReportTab(tab)}
+                className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all capitalize ${activeReportTab === tab ? 'bg-brand-orange text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}>
+                {tab === 'generate' ? '⚙️ Generate Report' : '📊 Results'}
+              </button>
+            ))}
+          </div>
+
+          {activeReportTab === 'generate' && (
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                <Activity size={22} className="text-brand-orange" /> OEE Report Configuration
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">From Date *</label>
+                  <input type="date" value={reportForm.from} onChange={e => setReportForm(f => ({...f, from: e.target.value}))}
+                    className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm w-full focus:outline-none focus:border-brand-orange" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">To Date *</label>
+                  <input type="date" value={reportForm.to} onChange={e => setReportForm(f => ({...f, to: e.target.value}))}
+                    className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm w-full focus:outline-none focus:border-brand-orange" />
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-3">Leave equipment selection empty to include all equipment. Report generates asynchronously.</p>
+
+              <div className="mt-6 flex items-center gap-4">
+                <button onClick={handleGenerateReport} disabled={isGeneratingReport}
+                  className="bg-brand-orange hover:bg-orange-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm disabled:opacity-60 flex items-center gap-2 shadow-sm">
+                  {isGeneratingReport ? <><Loader2 size={14} className="animate-spin" /> Generating...</> : <><Activity size={14} /> Generate OEE Report</>}
+                </button>
+                {reportId && (
+                  <span className={`text-sm font-semibold px-3 py-1.5 rounded-lg ${
+                    reportStatus === 'DONE' ? 'bg-green-100 text-green-700' :
+                    reportStatus === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                    reportStatus === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                  }`}>Status: {reportStatus}</span>
+                )}
+              </div>
+
+              {reportId && reportStatus === 'DONE' && (
+                <div className="mt-5 flex gap-3">
+                  <a href={`/api/reports/${reportId}/download?format=csv`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                    <FileText size={14} /> Download CSV
+                  </a>
+                  <a href={`/api/reports/${reportId}/download?format=pdf`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                    <FileText size={14} /> Download PDF
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeReportTab === 'results' && (
+            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+                <CheckCircle size={22} className="text-green-500" /> OEE Report Results
+              </h2>
+              {reportResult && reportResult.entries ? (
+                <>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Period: <strong>{reportResult.from}</strong> → <strong>{reportResult.to}</strong> &nbsp;|&nbsp;
+                    Generated: <strong>{new Date(reportResult.generatedAt).toLocaleString()}</strong> &nbsp;|&nbsp;
+                    <span className="text-xs text-gray-400">{reportResult.entries.length} equipment records</span>
+                  </p>
+                  <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                          {['Equipment','Sched. Hr','Usage Hr','Down Hr','Total Bk','Conf. Bk','Avail%','Perf%','Qual%','OEE%','₹/Hr','Idle ₹'].map(h => (
+                            <th key={h} className="py-3 px-3 font-semibold whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportResult.entries.map((e, i) => {
+                          const oee = e.oeeScore * 100;
+                          const rowColor = oee >= 65 ? 'bg-green-50' : oee >= 40 ? 'bg-yellow-50' : 'bg-red-50';
+                          return (
+                            <tr key={i} className={`border-b border-gray-100 ${rowColor} hover:brightness-95 transition-all`}>
+                              <td className="py-3 px-3 font-medium text-gray-800 whitespace-nowrap">{e.equipmentName}</td>
+                              <td className="py-3 px-3 text-gray-600">{e.scheduledHours?.toFixed(0)}</td>
+                              <td className="py-3 px-3 text-gray-600">{e.usageHours?.toFixed(1)}</td>
+                              <td className="py-3 px-3 text-gray-600">{e.downtimeHours?.toFixed(1)}</td>
+                              <td className="py-3 px-3 text-gray-600">{e.totalBookings}</td>
+                              <td className="py-3 px-3 text-gray-600">{e.confirmedBookings}</td>
+                              <td className="py-3 px-3 font-semibold">{(e.availability * 100).toFixed(1)}%</td>
+                              <td className="py-3 px-3 font-semibold">{(e.performance * 100).toFixed(1)}%</td>
+                              <td className="py-3 px-3 font-semibold">{(e.quality * 100).toFixed(1)}%</td>
+                              <td className={`py-3 px-3 font-black text-base ${oee >= 65 ? 'text-green-700' : oee >= 40 ? 'text-yellow-700' : 'text-red-700'}`}>
+                                {oee.toFixed(1)}%
+                              </td>
+                              <td className="py-3 px-3 text-gray-600">₹{e.pricePerHour}</td>
+                              <td className="py-3 px-3 text-gray-600 font-semibold">₹{e.idleCost}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-4 flex gap-6 text-xs text-gray-500">
+                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-400 inline-block" /> OEE ≥ 65% (World-Class)</span>
+                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-400 inline-block" /> 40–64% (Average)</span>
+                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> &lt;40% (Low)</span>
+                  </div>
+                </>
+              ) : (
+                <div className="py-16 text-center text-gray-400">
+                  <Activity size={40} className="mx-auto mb-3 text-gray-300" />
+                  <p className="font-medium">No report generated yet.</p>
+                  <p className="text-sm mt-1">Switch to the Generate tab, select a date range, and click Generate.</p>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 
       {activeSection === 'billing' && (
         <section className="flex flex-col gap-6 animate-fade-in">
+
+          {/* ── Module 3 Enhancement: Auto-Invoice + Approval UI ────────────── */}
+          {(hasRole('LAB_MANAGER') || hasRole('DEPT_HEAD') || hasRole('INSTITUTION_ADMIN')) && selectedDepartment && (
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                  <ShoppingCart size={18} className="text-purple-500" /> Auto-Invoice Generator
+                </h3>
+                <button onClick={() => setShowAutoInvoiceForm(v => !v)}
+                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                  <Plus size={16} /> {showAutoInvoiceForm ? 'Cancel' : 'Generate Auto-Invoice'}
+                </button>
+              </div>
+              {showAutoInvoiceForm && (
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in">
+                  <input type="date" value={autoInvoiceForm.periodStart} onChange={e => setAutoInvoiceForm(f => ({...f, periodStart: e.target.value}))}
+                    placeholder="Period Start *" className="border border-purple-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+                  <input type="date" value={autoInvoiceForm.periodEnd} onChange={e => setAutoInvoiceForm(f => ({...f, periodEnd: e.target.value}))}
+                    placeholder="Period End *" className="border border-purple-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-400" />
+                  <select value={autoInvoiceForm.fundingSourceId} onChange={e => setAutoInvoiceForm(f => ({...f, fundingSourceId: e.target.value}))}
+                    className="border border-purple-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-purple-400">
+                    <option value="">Funding Source (optional)</option>
+                    {fundingSources.map(fs => <option key={fs.id} value={fs.id}>{fs.name}</option>)}
+                  </select>
+                  <div className="md:col-span-3 flex justify-end">
+                    <button onClick={handleGenerateAutoInvoice} className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2">
+                      <FileText size={14} /> Generate Invoice
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Billing Header */}
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
@@ -3192,7 +3815,7 @@ const Dashboard = () => {
               </div>
               {/* Status filter */}
               <div className="flex items-center gap-2 flex-wrap">
-                {['ALL', 'ISSUED', 'PAID', 'CANCELLED', 'OVERDUE'].map(s => (
+                {['ALL', 'PENDING_APPROVAL', 'APPROVED', 'ISSUED', 'PAID', 'CANCELLED', 'OVERDUE'].map(s => (
                   <button
                     key={s}
                     onClick={() => { setInvoiceStatusFilter(s); setInvoiceCurrentPage(0); }}
@@ -3244,21 +3867,55 @@ const Dashboard = () => {
                           invoice.status === 'PAID' ? 'bg-green-100 text-green-700' :
                           invoice.status === 'ISSUED' ? 'bg-amber-100 text-amber-700' :
                           invoice.status === 'OVERDUE' ? 'bg-red-100 text-red-700' :
+                          invoice.status === 'PENDING_APPROVAL' ? 'bg-purple-100 text-purple-700' :
+                          invoice.status === 'APPROVED' ? 'bg-blue-100 text-blue-700' :
                           'bg-gray-100 text-gray-600'
-                        }`}>{invoice.status}</span>
+                        }`}>{invoice.status?.replace('_',' ')}</span>
                       </td>
                       <td className="py-4 text-gray-600">{invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : (invoice.generatedDate ? new Date(invoice.generatedDate).toLocaleDateString() : 'N/A')}</td>
-                      {/* Non-admin payment action */}
+                      {/* Actions column */}
                       {!isSystemAdmin && (
-                        <td className="py-4 text-right">
-                          {invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setSelectedInvoiceToPay(invoice); setIsPaymentModalOpen(true); }}
-                              className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-1.5 rounded-full text-sm font-medium transition-colors"
-                            >
-                              Pay Now
-                            </button>
-                          )}
+                        <td className="py-4 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Approval actions for managers */}
+                            {invoice.status === 'PENDING_APPROVAL' && (hasRole('INSTITUTION_ADMIN') || hasRole('DEPT_HEAD')) && (
+                              <>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setIsApprovingInvoice(true);
+                                    try {
+                                      await api.patch(`/billing/invoices/${invoice.id}/approve`);
+                                      fetchInvoices();
+                                    } catch(err) { alert('Failed to approve: ' + (err.response?.data?.message || err.message)); }
+                                    finally { setIsApprovingInvoice(false); }
+                                  }}
+                                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                                  <CheckCircle size={12} /> Approve
+                                </button>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (!window.confirm('Reject this invoice?')) return;
+                                    try {
+                                      await api.patch(`/billing/invoices/${invoice.id}/reject`);
+                                      fetchInvoices();
+                                    } catch(err) { alert('Failed: ' + (err.response?.data?.message || err.message)); }
+                                  }}
+                                  className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                                  <X size={12} /> Reject
+                                </button>
+                              </>
+                            )}
+                            {/* Payment action */}
+                            {invoice.status === 'ISSUED' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedInvoiceToPay(invoice); setIsPaymentModalOpen(true); }}
+                                className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-1.5 rounded-full text-sm font-medium transition-colors">
+                                Pay Now
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>

@@ -93,4 +93,38 @@ public class AnalyticsController {
             Pageable pageable) {
         return ResponseEntity.ok(analyticsService.getBookingDetails("department", departmentId, status, pageable));
     }
+
+    // ── Persona Dashboards (Module 4) ─────────────────────────────────────────
+
+    /**
+     * RESEARCHER persona dashboard.
+     * Returns personal booking stats and upcoming reservations.
+     */
+    @GetMapping("/dashboard/researcher")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.dto.ResearcherDashboardDto> getResearcherDashboard(
+            @RequestParam UUID userId) {
+        return ResponseEntity.ok(analyticsService.getResearcherDashboard(userId));
+    }
+
+    /**
+     * LAB_MANAGER / DEPT_HEAD persona dashboard.
+     * Returns equipment utilization rates and work order summary.
+     */
+    @GetMapping("/dashboard/lab-manager")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('INSTITUTION_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
+    public ResponseEntity<in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.dto.LabManagerDashboardDto> getLabManagerDashboard(
+            @RequestParam UUID institutionId) {
+        return ResponseEntity.ok(analyticsService.getLabManagerDashboard(institutionId));
+    }
+
+    /**
+     * SYSTEM_ADMIN persona dashboard.
+     * Cross-institution financial health and platform-wide bottleneck analysis.
+     */
+    @GetMapping("/dashboard/system-admin")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.dto.SystemAdminDashboardDto> getSystemAdminDashboard() {
+        return ResponseEntity.ok(analyticsService.getSystemAdminDashboard());
+    }
 }

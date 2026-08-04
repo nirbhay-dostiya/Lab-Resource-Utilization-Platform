@@ -51,4 +51,9 @@ public class CustomUserDetails implements UserDetails {
     public User getUser() {
         return user;
     }
-}
+
+    /** Convenience: get the authenticated user's UUID without additional casting. */
+    public java.util.UUID getId() {
+        return user.getId();
+    }
+}
