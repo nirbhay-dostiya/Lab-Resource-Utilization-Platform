@@ -22,6 +22,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Fetch the booking calendar for a specific piece of equipment
     List<Booking> findByEquipmentId(UUID equipmentId);
 
+    // Fetch the booking calendar for a specific piece of equipment with specific statuses
+    List<Booking> findByEquipmentIdAndStatusIn(UUID equipmentId, List<BookingStatus> statuses);
+
     // Find all bookings with a specific status (e.g., to clean up 'NO_SHOW's)
     List<Booking> findByStatus(BookingStatus status);
 

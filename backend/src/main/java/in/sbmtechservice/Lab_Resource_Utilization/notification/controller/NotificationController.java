@@ -2,9 +2,12 @@ package in.sbmtechservice.Lab_Resource_Utilization.notification.controller;
 
 import in.sbmtechservice.Lab_Resource_Utilization.notification.dto.NotificationResponse;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationService;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.service.SseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,6 +18,12 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final SseService sseService;
+
+    @GetMapping(value = "/stream/{userId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamNotifications(@PathVariable UUID userId) {
+        return sseService.subscribe(userId);
+    }
 
     @GetMapping("/user/{userId}/unread")
     public ResponseEntity<List<NotificationResponse>> getUnreadNotifications(@PathVariable UUID userId) {

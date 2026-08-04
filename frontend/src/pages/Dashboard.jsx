@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar, MoreVertical, LayoutDashboard, Activity, CheckCircle, Wrench, Clock, FileText, ShoppingCart, X, Bell, Search } from 'lucide-react';
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -120,6 +123,8 @@ const Dashboard = () => {
   const [isFetchingShared, setIsFetchingShared] = useState(false);
   const [accessRequestData, setAccessRequestData] = useState({ listingId: '', equipmentName: '', justification: '', requestedStart: '', requestedEnd: '' });
   const [showAccessModal, setShowAccessModal] = useState(false);
+  const [occupiedDates, setOccupiedDates] = useState([]);
+  const [isFetchingOccupiedDates, setIsFetchingOccupiedDates] = useState(false);
 
   // Share Equipment State
   const [showShareModal, setShowShareModal] = useState(false);
@@ -159,6 +164,8 @@ const Dashboard = () => {
   const [bookingCurrentPage, setBookingCurrentPage] = useState(0);
   const BOOKING_PAGE_SIZE = 10;
   const [bookingHistoryInstitutionFilter, setBookingHistoryInstitutionFilter] = useState('');
+  const [bookingHistorySearchFilter, setBookingHistorySearchFilter] = useState('');
+  const [bookingHistoryStatusFilter, setBookingHistoryStatusFilter] = useState('');
 
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -528,6 +535,20 @@ const Dashboard = () => {
       console.error("Failed to fetch performance data", err);
     } finally {
       setIsFetchingPerformance(false);
+    }
+  };
+
+  
+  const fetchOccupiedDates = async (listingId) => {
+    setIsFetchingOccupiedDates(true);
+    try {
+      const response = await api.get(`/resource-sharing/listings/${listingId}/availability`);
+      setOccupiedDates(response.data);
+    } catch (err) {
+      console.error("Failed to fetch availability", err);
+      toast.error("Could not fetch equipment availability.");
+    } finally {
+      setIsFetchingOccupiedDates(false);
     }
   };
 
@@ -1675,6 +1696,7 @@ const Dashboard = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             setAccessRequestData({ ...accessRequestData, listingId: resource.id, equipmentName: resource.equipmentName, availableFrom: resource.availableFrom, availableTo: resource.availableTo });
+                            fetchOccupiedDates(resource.id);
                             setShowAccessModal(true);
                           }}
                           className="w-full bg-white border border-gray-200 hover:border-brand-orange hover:text-brand-orange text-gray-700 font-semibold py-2 rounded-xl transition-colors text-sm"
@@ -2760,7 +2782,8 @@ const Dashboard = () => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setAccessRequestData({ ...accessRequestData, listingId: listing.id, equipmentName: listing.equipmentName });
+                                  setAccessRequestData({ ...accessRequestData, listingId: listing.id, equipmentName: listing.equipmentName, availableFrom: listing.availableFrom, availableTo: listing.availableTo });
+                                  fetchOccupiedDates(listing.id);
                                   setShowAccessModal(true);
                                 }}
                                 className="bg-brand-orange hover:bg-orange-600 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
@@ -2804,9 +2827,43 @@ const Dashboard = () => {
         <section className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200 animate-fade-in flex flex-col gap-8">
           <div className="flex justify-between items-center flex-wrap gap-4">
             <h2 className="text-xl font-medium flex items-center gap-2"><ShoppingCart size={24} className="text-brand-orange" /> {isSystemAdmin ? 'Global Bookings Overview' : 'Booking History'}</h2>
-            {isSystemAdmin && (
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="relative">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search bookings..."
+                  className="pl-9 pr-4 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-orange w-64"
+                  value={bookingHistorySearchFilter}
+                  onChange={(e) => {
+                    setBookingHistorySearchFilter(e.target.value);
+                    setBookingHistoryPage(1);
+                  }}
+                />
+              </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500 font-medium">Filter by Institute:</span>
+                <span className="text-sm text-gray-500 font-medium">Status:</span>
+                <select
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white text-gray-700 focus:outline-none focus:border-brand-orange"
+                  value={bookingHistoryStatusFilter}
+                  onChange={(e) => {
+                    setBookingHistoryStatusFilter(e.target.value);
+                    setBookingHistoryPage(1);
+                  }}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="PENDING_PAYMENT">Pending Payment</option>
+                  <option value="CONFIRMED">Confirmed</option>
+                  <option value="IN_USE">In Use</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                  <option value="NO_SHOW">No Show</option>
+                </select>
+              </div>
+              {isSystemAdmin && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500 font-medium">Filter by Institute:</span>
                 <select
                   className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white text-gray-700 focus:outline-none focus:border-brand-orange"
                   value={bookingHistoryInstitutionFilter}
@@ -2820,8 +2877,9 @@ const Dashboard = () => {
                     <option key={inst.id} value={inst.id}>{inst.name}</option>
                   ))}
                 </select>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse whitespace-nowrap">
@@ -2845,6 +2903,19 @@ const Dashboard = () => {
                       b.userInstitutionId?.toString() === bookingHistoryInstitutionFilter || 
                       b.equipmentInstitutionId?.toString() === bookingHistoryInstitutionFilter
                     );
+                  }
+                  if (bookingHistorySearchFilter) {
+                    const searchLower = bookingHistorySearchFilter.toLowerCase();
+                    historyBookings = historyBookings.filter(b => 
+                      b.equipmentName?.toLowerCase().includes(searchLower) ||
+                      b.userName?.toLowerCase().includes(searchLower) ||
+                      b.userInstitutionName?.toLowerCase().includes(searchLower) ||
+                      b.equipmentInstitutionName?.toLowerCase().includes(searchLower) ||
+                      b.status?.toLowerCase().includes(searchLower)
+                    );
+                  }
+                  if (bookingHistoryStatusFilter) {
+                    historyBookings = historyBookings.filter(b => b.status === bookingHistoryStatusFilter);
                   }
                   
                   const sortedHistoryBookings = [...historyBookings].sort((a, b) => new Date(b.startTime).getTime() < new Date(a.startTime).getTime() ? 1 : -1);
@@ -2920,6 +2991,19 @@ const Dashboard = () => {
                 b.userInstitutionId?.toString() === bookingHistoryInstitutionFilter || 
                 b.equipmentInstitutionId?.toString() === bookingHistoryInstitutionFilter
               );
+            }
+            if (bookingHistorySearchFilter) {
+              const searchLower = bookingHistorySearchFilter.toLowerCase();
+              historyBookings = historyBookings.filter(b => 
+                b.equipmentName?.toLowerCase().includes(searchLower) ||
+                b.userName?.toLowerCase().includes(searchLower) ||
+                b.userInstitutionName?.toLowerCase().includes(searchLower) ||
+                b.equipmentInstitutionName?.toLowerCase().includes(searchLower) ||
+                b.status?.toLowerCase().includes(searchLower)
+              );
+            }
+            if (bookingHistoryStatusFilter) {
+              historyBookings = historyBookings.filter(b => b.status === bookingHistoryStatusFilter);
             }
             const totalPages = Math.ceil(historyBookings.length / itemsPerPage);
             if (totalPages > 1) {
@@ -3555,29 +3639,168 @@ const Dashboard = () => {
         <p className="text-gray-500 text-sm mb-6">You are requesting access to: <span className="font-medium text-gray-800">{accessRequestData.equipmentName}</span></p>
 
         <form onSubmit={handleCreateAccessRequest} className="flex flex-col gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Requested Start Date</label>
-            <input
-              type="date"
-              required
-              min={accessRequestData.availableFrom}
-              max={accessRequestData.availableTo}
-              className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
-              value={accessRequestData.requestedStart}
-              onChange={(e) => setAccessRequestData({ ...accessRequestData, requestedStart: e.target.value })}
-            />
+                    <div className="flex gap-4 mb-2">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date (DD-MM-YYYY)</label>
+              <input
+                type="text"
+                required
+                placeholder="DD-MM-YYYY"
+                maxLength="10"
+                className="rounded-xl border border-gray-300 px-4 py-2 outline-none w-full text-sm font-mono"
+                value={(() => {
+                  if (!accessRequestData.requestedStart) return '';
+                  if (accessRequestData.requestedStart.includes('-') && accessRequestData.requestedStart.length === 10 && accessRequestData.requestedStart.split('-')[0].length === 4) {
+                    const [y, m, d] = accessRequestData.requestedStart.split('-');
+                    return `${d}-${m}-${y}`;
+                  }
+                  return accessRequestData.requestedStart;
+                })()}
+                onChange={(e) => {
+                  let digits = e.target.value.replace(/\D/g, '');
+                  if (digits.length > 8) digits = digits.slice(0, 8);
+                  let val = digits;
+                  if (digits.length > 2) val = digits.slice(0, 2) + '-' + digits.slice(2);
+                  if (digits.length > 4) val = val.slice(0, 5) + '-' + digits.slice(4);
+                  
+                  if (val.length === 10) {
+                    const [d, m, y] = val.split('-');
+                    setAccessRequestData({ ...accessRequestData, requestedStart: `${y}-${m}-${d}` });
+                  } else {
+                    setAccessRequestData({ ...accessRequestData, requestedStart: val });
+                  }
+                }}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date (DD-MM-YYYY)</label>
+              <input
+                type="text"
+                required
+                placeholder="DD-MM-YYYY"
+                maxLength="10"
+                className="rounded-xl border border-gray-300 px-4 py-2 outline-none w-full text-sm font-mono"
+                value={(() => {
+                  if (!accessRequestData.requestedEnd) return '';
+                  if (accessRequestData.requestedEnd.includes('-') && accessRequestData.requestedEnd.length === 10 && accessRequestData.requestedEnd.split('-')[0].length === 4) {
+                    const [y, m, d] = accessRequestData.requestedEnd.split('-');
+                    return `${d}-${m}-${y}`;
+                  }
+                  return accessRequestData.requestedEnd;
+                })()}
+                onChange={(e) => {
+                  let digits = e.target.value.replace(/\D/g, '');
+                  if (digits.length > 8) digits = digits.slice(0, 8);
+                  let val = digits;
+                  if (digits.length > 2) val = digits.slice(0, 2) + '-' + digits.slice(2);
+                  if (digits.length > 4) val = val.slice(0, 5) + '-' + digits.slice(4);
+                  
+                  if (val.length === 10) {
+                    const [d, m, y] = val.split('-');
+                    
+                    const newEnd = `${y}-${m}-${d}`;
+                    const hasConflict = occupiedDates.some(range => {
+                      return (range.start >= accessRequestData.requestedStart && range.start <= newEnd) ||
+                             (range.end >= accessRequestData.requestedStart && range.end <= newEnd);
+                    });
+                    if (hasConflict) {
+                       toast.error("Cannot select range over booked dates.");
+                       setAccessRequestData({ ...accessRequestData, requestedEnd: '' });
+                       return;
+                    }
+                    
+                    setAccessRequestData({ ...accessRequestData, requestedEnd: newEnd });
+                  } else {
+                    setAccessRequestData({ ...accessRequestData, requestedEnd: val });
+                  }
+                }}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Requested End Date</label>
-            <input
-              type="date"
-              required
-              min={accessRequestData.availableFrom}
-              max={accessRequestData.availableTo}
-              className="rounded-xl border border-gray-300 px-4 py-2.5 outline-none w-full"
-              value={accessRequestData.requestedEnd}
-              onChange={(e) => setAccessRequestData({ ...accessRequestData, requestedEnd: e.target.value })}
-            />
+          
+          <div className="border border-gray-200 rounded-xl overflow-hidden mb-2">
+            {isFetchingOccupiedDates ? (
+              <div className="flex items-center justify-center p-8 text-gray-500">
+                <Loader2 size={24} className="animate-spin text-brand-orange" />
+              </div>
+            ) : (
+              <FullCalendar
+                plugins={[ dayGridPlugin, interactionPlugin ]}
+                initialView="dayGridMonth"
+                height={350}
+                headerToolbar={{
+                  left: 'prev',
+                  center: 'title',
+                  right: 'next'
+                }}
+                events={occupiedDates.map(d => ({
+                  title: 'Booked',
+                  start: d.start,
+                  end: new Date(new Date(d.end).getTime() + 86400000).toISOString().split('T')[0],
+                  classNames: ['unavailable-event'],
+                  display: 'block'
+                }))}
+                dateClick={(info) => {
+                  const clickedDate = info.dateStr;
+                  if (new Date(clickedDate) < new Date(new Date().setHours(0,0,0,0))) return;
+                  
+                  const availFrom = accessRequestData.availableFrom ? accessRequestData.availableFrom.split('T')[0] : null;
+                  const availTo = accessRequestData.availableTo ? accessRequestData.availableTo.split('T')[0] : null;
+                  if (availFrom && clickedDate < availFrom) return;
+                  if (availTo && clickedDate > availTo) return;
+                  
+                  const isUnavailable = occupiedDates.some(range => {
+                    return clickedDate >= range.start && clickedDate <= range.end;
+                  });
+                  
+                  if (isUnavailable) {
+                    toast.error("This date is already booked.");
+                    return;
+                  }
+                  
+                  if (!accessRequestData.requestedStart || (accessRequestData.requestedStart && accessRequestData.requestedEnd)) {
+                    setAccessRequestData({ ...accessRequestData, requestedStart: clickedDate, requestedEnd: '' });
+                  } else {
+                    if (clickedDate < accessRequestData.requestedStart) {
+                      setAccessRequestData({ ...accessRequestData, requestedStart: clickedDate, requestedEnd: accessRequestData.requestedStart });
+                    } else {
+                      const hasConflict = occupiedDates.some(range => {
+                        return (range.start >= accessRequestData.requestedStart && range.start <= clickedDate) ||
+                               (range.end >= accessRequestData.requestedStart && range.end <= clickedDate);
+                      });
+                      if (hasConflict) {
+                         toast.error("Cannot select range over booked dates.");
+                         return;
+                      }
+                      setAccessRequestData({ ...accessRequestData, requestedEnd: clickedDate });
+                    }
+                  }
+                }}
+                dayCellClassNames={(arg) => {
+                  const dateStr = arg.date.toISOString().split('T')[0];
+                  if (dateStr < new Date().toISOString().split('T')[0]) return [];
+                  
+                  const availFrom = accessRequestData.availableFrom ? accessRequestData.availableFrom.split('T')[0] : null;
+                  const availTo = accessRequestData.availableTo ? accessRequestData.availableTo.split('T')[0] : null;
+                  if (availFrom && dateStr < availFrom) return [];
+                  if (availTo && dateStr > availTo) return [];
+                  
+                  const isUnavailable = occupiedDates.some(range => {
+                    return dateStr >= range.start && dateStr <= range.end;
+                  });
+                  if (isUnavailable) return [];
+                  
+                  if (accessRequestData.requestedStart === dateStr || accessRequestData.requestedEnd === dateStr) {
+                    return ['selected-date'];
+                  }
+                  if (accessRequestData.requestedStart && accessRequestData.requestedEnd && dateStr > accessRequestData.requestedStart && dateStr < accessRequestData.requestedEnd) {
+                    return ['selected-date', 'opacity-70'];
+                  }
+                  
+                  return ['selectable-date'];
+                }}
+              />
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Justification</label>

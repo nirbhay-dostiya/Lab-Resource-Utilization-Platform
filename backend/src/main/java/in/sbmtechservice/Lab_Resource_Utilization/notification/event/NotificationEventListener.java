@@ -6,10 +6,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.scheduling.annotation.Async;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@Async
 public class NotificationEventListener {
 
     private final NotificationDispatcher dispatcher;
@@ -17,7 +19,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onEquipmentAdded(NotificationEvents.EquipmentAddedEvent event) {
         dispatcher.notifyEquipmentAdded(
-                event.institutionId(), event.equipmentId(), event.equipmentName(), event.addedByName()
+                event.institutionId(), event.equipmentId(), event.equipmentName(), event.addedById(), event.addedByName()
         );
     }
 
@@ -98,7 +100,8 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onResourceShareListed(NotificationEvents.ResourceShareListedEvent event) {
         dispatcher.notifyResourceShareListed(
-                event.listingId(), event.equipmentName(), event.institutionName()
+                event.listingId(), event.equipmentName(), event.institutionName(),
+                event.sharedById(), event.institutionId()
         );
     }
 
@@ -106,7 +109,7 @@ public class NotificationEventListener {
     public void onAccessRequestSubmitted(NotificationEvents.AccessRequestSubmittedEvent event) {
         dispatcher.notifyAccessRequestSubmitted(
                 event.ownerInstitutionId(), event.requestId(), event.requesterName(),
-                event.equipmentName(), event.requesterInstitutionName()
+                event.equipmentName(), event.requesterInstitutionName(), event.requesterId()
         );
     }
 

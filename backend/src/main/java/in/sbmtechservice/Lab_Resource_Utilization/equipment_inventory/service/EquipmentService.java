@@ -95,6 +95,7 @@ public class EquipmentService {
                 department.getInstitution().getId(),
                 saved.getId(),
                 saved.getName(),
+                currentUser.getId(),
                 addedByName
         ));
 

@@ -12,6 +12,7 @@ public class NotificationEvents {
             UUID institutionId,
             UUID equipmentId,
             String equipmentName,
+            UUID addedById,
             String addedByName
     ) {}
 
@@ -90,7 +91,9 @@ public class NotificationEvents {
     public record ResourceShareListedEvent(
             UUID listingId,
             String equipmentName,
-            String institutionName
+            String institutionName,
+            UUID sharedById,
+            UUID institutionId
     ) {}
 
     public record AccessRequestSubmittedEvent(
@@ -98,7 +101,8 @@ public class NotificationEvents {
             UUID requestId,
             String requesterName,
             String equipmentName,
-            String requesterInstitutionName
+            String requesterInstitutionName,
+            UUID requesterId
     ) {}
 
     public record AccessRequestApprovedEvent(

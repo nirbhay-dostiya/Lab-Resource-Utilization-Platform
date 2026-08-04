@@ -3,6 +3,7 @@ package in.sbmtechservice.Lab_Resource_Utilization.notification.service;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.dto.NotificationResponse;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.entity.Notification;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationChannel;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationReferenceType;
@@ -37,10 +38,12 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(propagation = Propagation.REQUIRES_NEW)
 public class NotificationDispatcher {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final SseService sseService;
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Core send primitives
@@ -72,6 +75,7 @@ public class NotificationDispatcher {
                     .sentAt(LocalDateTime.now())
                     .build();
             notificationRepository.save(notification);
+            sseService.sendNotification(recipientId, mapToResponse(notification));
             log.debug("[NOTIFY] → {} ({}): {}", recipient.getEmail(), type, content);
         } catch (Exception e) {
             log.error("[NOTIFY] Failed to save notification for user {}: {}", recipientId, e.getMessage());
@@ -104,7 +108,10 @@ public class NotificationDispatcher {
         }
         if (!batch.isEmpty()) {
             notificationRepository.saveAll(batch);
-            log.debug("[NOTIFY] Batch {} notifications → type={}", batch.size(), type);
+            for (Notification n : batch) {
+                sseService.sendNotification(n.getUser().getId(), mapToResponse(n));
+            }
+            log.debug("[NOTIFY] Bulk sent {} notifications of type {}", batch.size(), type);
         }
     }
 
@@ -160,13 +167,22 @@ public class NotificationDispatcher {
      * EQUIPMENT ADDED — Notify Dept Heads + Inst Admins of the institution + System Admins.
      */
     public void notifyEquipmentAdded(UUID institutionId, UUID equipmentId,
-                                     String equipmentName, String addedByName) {
+                                     String equipmentName, UUID addedById, String addedByName) {
+        
+        // Explicitly notify the user who added it
+        send(addedById, NotificationReferenceType.EQUIPMENT, equipmentId,
+                String.format("You have successfully added equipment '%s'.", equipmentName));
+
         String msg = String.format("New equipment '%s' has been added to your institution by %s.",
                 equipmentName, addedByName);
         List<User> recipients = new ArrayList<>();
         recipients.addAll(getDeptHeads(institutionId));
         recipients.addAll(getInstAdmins(institutionId));
         recipients.addAll(getSystemAdmins());
+        
+        // Prevent sending the third-person message to the user who added it
+        recipients.removeIf(u -> u.getId().equals(addedById));
+        
         sendToAll(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg);
     }
 
@@ -302,25 +318,47 @@ public class NotificationDispatcher {
     }
 
     /**
-     * RESOURCE SHARE LISTED — Notify System Admins that an institute listed equipment for sharing.
+     * RESOURCE SHARE LISTED — Notify the person who listed it + Dept Heads + Inst Admins + System Admins.
      */
-    public void notifyResourceShareListed(UUID listingId, String equipmentName, String institutionName) {
-        String msg = String.format(
-                "'%s' from %s has been listed for inter-institution sharing.",
-                equipmentName, institutionName);
-        sendToAll(getSystemAdmins(), NotificationReferenceType.SHARING_REQUEST, listingId, msg);
+    public void notifyResourceShareListed(UUID listingId, String equipmentName, String institutionName, UUID sharedById, UUID institutionId) {
+        // Notify the user who shared it
+        send(sharedById, NotificationReferenceType.SHARING_REQUEST, listingId,
+                String.format("You have successfully listed '%s' for inter-institution sharing.", equipmentName));
+
+        // Notify Dept Heads and Inst Admins of the owning institution
+        String staffMsg = String.format("Equipment '%s' has been listed for inter-institution sharing.", equipmentName);
+        List<User> staff = new ArrayList<>();
+        staff.addAll(getDeptHeads(institutionId));
+        staff.addAll(getInstAdmins(institutionId));
+        staff.removeIf(u -> u.getId().equals(sharedById)); // Don't double notify the person who shared it
+        sendToAll(deduplicate(staff), NotificationReferenceType.SHARING_REQUEST, listingId, staffMsg);
+
+        // Notify System Admins
+        String sysAdminMsg = String.format("'%s' from %s has been listed for inter-institution sharing.", equipmentName, institutionName);
+        sendToAll(getSystemAdmins(), NotificationReferenceType.SHARING_REQUEST, listingId, sysAdminMsg);
     }
 
     /**
-     * ACCESS REQUEST SUBMITTED — Notify Inst Admins of the equipment-owning institution.
+     * ACCESS REQUEST SUBMITTED — Notify Inst Admins, Dept Heads, and Lab Managers of the equipment-owning institution, and the requester.
      */
     public void notifyAccessRequestSubmitted(UUID ownerInstitutionId, UUID requestId,
                                              String requesterName, String equipmentName,
-                                             String requesterInstitutionName) {
+                                             String requesterInstitutionName, UUID requesterId) {
+        // Notify the requester
+        send(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
+                String.format("Your access request for '%s' has been successfully submitted.", equipmentName));
+
+        // Notify the owning institution's staff
         String msg = String.format(
                 "%s from %s has requested access to your shared equipment '%s'. Please review.",
                 requesterName, requesterInstitutionName, equipmentName);
-        sendToAll(getInstAdmins(ownerInstitutionId), NotificationReferenceType.ACCESS_REQUEST, requestId, msg);
+        
+        List<User> staff = new ArrayList<>();
+        staff.addAll(getLabManagers(ownerInstitutionId));
+        staff.addAll(getDeptHeads(ownerInstitutionId));
+        staff.addAll(getInstAdmins(ownerInstitutionId));
+        staff.removeIf(u -> u.getId().equals(requesterId)); // Don't notify the requester if they are also staff
+        sendToAll(deduplicate(staff), NotificationReferenceType.ACCESS_REQUEST, requestId, msg);
     }
 
     /**
@@ -358,6 +396,7 @@ public class NotificationDispatcher {
      * Remove duplicate users from a recipient list (users may have multiple roles).
      */
     private List<User> deduplicate(List<User> users) {
+        if (users == null) return List.of();
         return users.stream()
                 .filter(u -> u != null && u.getId() != null)
                 .collect(java.util.stream.Collectors.toMap(
@@ -369,5 +408,22 @@ public class NotificationDispatcher {
                 .values()
                 .stream()
                 .collect(java.util.stream.Collectors.toList());
+    }
+
+    private NotificationResponse mapToResponse(Notification notification) {
+        return NotificationResponse.builder()
+                .id(notification.getId())
+                .userId(notification.getUser().getId())
+                .content(notification.getContent())
+                .channel(notification.getChannel())
+                .referenceType(notification.getReferenceType())
+                .referenceId(notification.getReferenceId())
+                .status(notification.getStatus())
+                .isRead(notification.getIsRead())
+                .createdAt(notification.getCreatedAt())
+                .sentAt(notification.getSentAt())
+                .title(notification.getReferenceType().name())
+                .message(notification.getContent())
+                .build();
     }
 }

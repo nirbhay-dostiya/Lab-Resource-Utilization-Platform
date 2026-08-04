@@ -24,6 +24,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.dto.DateRangeDto;
+import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.repository.BookingRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.enums.BookingStatus;
+import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.entity.Booking;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -35,9 +41,10 @@ public class ResourceSharingService {
     private final UserRepository userRepository;
     private final EquipmentRepository equipmentRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final BookingRepository bookingRepository;
 
     @Transactional
-    public SharedEquipmentListingDto createListing(SharedEquipmentListingDto dto) {
+    public SharedEquipmentListingDto createListing(SharedEquipmentListingDto dto, UUID sharedById) {
         SharingAgreement agreement = null;
         if (dto.getAgreementId() != null) {
             agreement = agreementRepository.findById(dto.getAgreementId())
@@ -62,8 +69,9 @@ public class ResourceSharingService {
 
         // ── NOTIFICATION: Alert System Admins about new shared listing ──
         String institutionName = equipment.getDepartment().getInstitution().getName();
+        UUID institutionId = equipment.getDepartment().getInstitution().getId();
         eventPublisher.publishEvent(new NotificationEvents.ResourceShareListedEvent(
-                saved.getId(), equipment.getName(), institutionName));
+                saved.getId(), equipment.getName(), institutionName, sharedById, institutionId));
 
         return dto;
     }
@@ -107,7 +115,7 @@ public class ResourceSharingService {
         
         eventPublisher.publishEvent(new NotificationEvents.AccessRequestSubmittedEvent(
                 ownerInstitutionId, saved.getId(), requesterName,
-                listing.getEquipment().getName(), requesterInstitutionName));
+                listing.getEquipment().getName(), requesterInstitutionName, requester.getId()));
 
         return dto;
     }
@@ -199,5 +207,37 @@ public class ResourceSharingService {
             dto.setRequesterInstitutionName(isSysAdmin ? "System Admin (Global)" : "No Institution Assigned");
         }
         return dto;
+    }
+
+    public List<DateRangeDto> getOccupiedDates(UUID listingId) {
+        SharedEquipmentListing listing = listingRepository.findById(listingId)
+                .orElseThrow(() -> new RuntimeException("Listing not found"));
+        
+        List<DateRangeDto> occupiedDates = new ArrayList<>();
+
+        // 1. Get approved Access Requests
+        List<AccessRequest> approvedRequests = accessRequestRepository.findByListingIdAndStatusOrderByCreatedAtAsc(listingId, AccessRequestStatus.APPROVED);
+        for (AccessRequest req : approvedRequests) {
+            occupiedDates.add(DateRangeDto.builder()
+                    .start(req.getRequestedStart())
+                    .end(req.getRequestedEnd())
+                    .reason("Approved Access Request")
+                    .build());
+        }
+
+        // 2. Get active/confirmed bookings for the equipment
+        UUID equipmentId = listing.getEquipment().getId();
+        List<Booking> activeBookings = bookingRepository.findByEquipmentIdAndStatusIn(
+                equipmentId, List.of(BookingStatus.CONFIRMED, BookingStatus.IN_USE));
+        
+        for (Booking booking : activeBookings) {
+            occupiedDates.add(DateRangeDto.builder()
+                    .start(booking.getStartTime().toLocalDate())
+                    .end(booking.getEndTime().toLocalDate())
+                    .reason("Local Equipment Booking")
+                    .build());
+        }
+
+        return occupiedDates;
     }
 }
