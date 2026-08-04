@@ -13,8 +13,9 @@ import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.enums.AccessR
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.repository.AccessRequestRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.repository.SharedEquipmentListingRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.resource_sharing.repository.SharingAgreementRepository;
-import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,7 @@ public class ResourceSharingService {
     private final AccessRequestRepository accessRequestRepository;
     private final UserRepository userRepository;
     private final EquipmentRepository equipmentRepository;
-    private final NotificationDispatcher notificationDispatcher;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public SharedEquipmentListingDto createListing(SharedEquipmentListingDto dto) {
@@ -59,9 +60,10 @@ public class ResourceSharingService {
         dto.setId(saved.getId());
         dto.setEquipmentName(equipment.getName());
 
-        // ── NOTIFICATION: Alert system admins a new shared listing was created ──
+        // ── NOTIFICATION: Alert System Admins about new shared listing ──
         String institutionName = equipment.getDepartment().getInstitution().getName();
-        notificationDispatcher.notifyResourceShareListed(saved.getId(), equipment.getName(), institutionName);
+        eventPublisher.publishEvent(new NotificationEvents.ResourceShareListedEvent(
+                saved.getId(), equipment.getName(), institutionName));
 
         return dto;
     }
@@ -102,9 +104,10 @@ public class ResourceSharingService {
                 ? requester.getInstitution().getName()
                 : (requester.getDepartment() != null && requester.getDepartment().getInstitution() != null
                         ? requester.getDepartment().getInstitution().getName() : "External");
-        notificationDispatcher.notifyAccessRequestSubmitted(
+        
+        eventPublisher.publishEvent(new NotificationEvents.AccessRequestSubmittedEvent(
                 ownerInstitutionId, saved.getId(), requesterName,
-                listing.getEquipment().getName(), requesterInstitutionName);
+                listing.getEquipment().getName(), requesterInstitutionName));
 
         return dto;
     }
@@ -125,9 +128,9 @@ public class ResourceSharingService {
         // ── NOTIFICATION: Inform the requester of the decision ──
         String equipmentName = request.getListing().getEquipment().getName();
         if (status == AccessRequestStatus.APPROVED) {
-            notificationDispatcher.notifyAccessRequestApproved(request.getRequester(), saved.getId(), equipmentName);
+            eventPublisher.publishEvent(new NotificationEvents.AccessRequestApprovedEvent(request.getRequester().getId(), saved.getId(), equipmentName));
         } else if (status == AccessRequestStatus.REJECTED) {
-            notificationDispatcher.notifyAccessRequestRejected(request.getRequester(), saved.getId(), equipmentName);
+            eventPublisher.publishEvent(new NotificationEvents.AccessRequestRejectedEvent(request.getRequester().getId(), saved.getId(), equipmentName));
         }
 
         return mapToAccessRequestDto(saved);

@@ -17,8 +17,10 @@ import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.InvoiceStat
 import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.enums.ReferenceType;
 import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.InvoiceRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.InvoiceLineItemRepository;
-import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class BookingService {
 
     private final BookingRepository bookingRepository;
@@ -41,7 +44,7 @@ public class BookingService {
     private final WaitlistRepository waitlistRepository;
     private final InvoiceRepository invoiceRepository;
     private final InvoiceLineItemRepository invoiceLineItemRepository;
-    private final NotificationDispatcher notificationDispatcher;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
 
@@ -146,25 +149,41 @@ public class BookingService {
             invoiceId = invoice.getId();
 
             // ── NOTIFICATION: Notify booker their invoice is ready ──
-            notificationDispatcher.notifyBookingInvoiceGenerated(
-                    user, saved.getId(), equipment.getName(), totalAmount.toPlainString());
+            eventPublisher.publishEvent(new NotificationEvents.BookingInvoiceGeneratedEvent(
+                    user.getId(), saved.getId(), equipment.getName(), totalAmount.toPlainString()));
 
         } else {
             // PENDING — notify equipment institute staff for approval
             UUID equipmentInstitutionId = equipment.getDepartment().getInstitution().getId();
             String bookerName = user.getFirstName() + " " + user.getLastName();
             String startTime = request.getStartTime().format(DT_FMT);
-            notificationDispatcher.notifyBookingPendingApproval(
-                    equipmentInstitutionId, saved.getId(), bookerName, equipment.getName(), startTime);
+            
+            eventPublisher.publishEvent(new NotificationEvents.BookingPendingApprovalEvent(
+                    equipmentInstitutionId, saved.getId(), bookerName, equipment.getName(), startTime));
         }
 
         return mapToResponse(saved, invoiceId, totalAmount);
     }
 
     @Transactional
-    public BookingResponse updateBookingStatus(UUID bookingId, BookingStatus newStatus) {
+    public BookingResponse updateBookingStatus(UUID bookingId, BookingStatus newStatus, String currentUserEmail) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found."));
+                
+        User currentUser = userRepository.findByEmail(currentUserEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found."));
+
+        // Allow cancellation if user is the booker
+        if (newStatus == BookingStatus.CANCELLED && !booking.getUser().getId().equals(currentUser.getId())) {
+            // If they aren't the booker, they must be admin
+            boolean isStaff = currentUser.getRoles().stream().anyMatch(r ->
+                    r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.SYSTEM_ADMIN ||
+                    r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.DEPT_HEAD ||
+                    r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.LAB_MANAGER);
+            if (!isStaff) {
+                throw new SecurityException("You do not have permission to cancel this booking.");
+            }
+        }
 
         BookingStatus oldStatus = booking.getStatus();
         booking.setStatus(newStatus);
@@ -178,17 +197,22 @@ public class BookingService {
         // ── NOTIFICATIONS based on new status ──
         switch (newStatus) {
             case CONFIRMED:
-                notificationDispatcher.notifyBookingConfirmed(booker, bookingId, equipmentName, startTime);
+                eventPublisher.publishEvent(new NotificationEvents.BookingConfirmedEvent(
+                        booker.getId(), bookingId, equipmentName, startTime));
                 break;
 
             case CANCELLED:
-                String cancelledByName = "the system"; // resolved by caller context if needed
-                notificationDispatcher.notifyBookingCancelled(
-                        booker, equipmentInstitutionId, bookingId, equipmentName, cancelledByName);
+                String cancelledByName = currentUser.getFirstName() + " " + currentUser.getLastName();
+                if (currentUser.getId().equals(booker.getId())) {
+                    cancelledByName = "you";
+                }
+                eventPublisher.publishEvent(new NotificationEvents.BookingCancelledEvent(
+                        booker.getId(), equipmentInstitutionId, bookingId, equipmentName, cancelledByName));
                 break;
 
             case COMPLETED:
-                notificationDispatcher.notifyBookingCompleted(booker, bookingId, equipmentName);
+                eventPublisher.publishEvent(new NotificationEvents.BookingCompletedEvent(
+                        booker.getId(), bookingId, equipmentName));
                 break;
 
             default:
@@ -221,8 +245,8 @@ public class BookingService {
                     waitlistRepository.save(waitlist);
 
                     // ── NOTIFICATION: Tell the waitlisted user they got a slot ──
-                    notificationDispatcher.notifyWaitlistFulfilled(
-                            waitlist.getUser(), waitlist.getId(), booking.getEquipment().getName());
+                    eventPublisher.publishEvent(new NotificationEvents.WaitlistFulfilledEvent(
+                            waitlist.getUser().getId(), waitlist.getId(), booking.getEquipment().getName()));
 
                     break;
                 }

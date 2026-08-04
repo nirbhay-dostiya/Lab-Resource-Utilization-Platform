@@ -13,8 +13,9 @@ import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository.TagRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.DepartmentRepository;
-import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,7 @@ public class EquipmentService {
     private final EquipmentCategoryRepository categoryRepository;
     private final TagRepository tagRepository;
     private final UserRepository userRepository;
-    private final NotificationDispatcher notificationDispatcher;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public EquipmentResponse addEquipment(EquipmentRequest request, String currentUserEmail) {
@@ -88,10 +89,14 @@ public class EquipmentService {
 
         Equipment saved = equipmentRepository.save(equipment);
 
-        // ── NOTIFICATION: Alert institute admins, dept heads, and system admins ──
-        UUID institutionId = department.getInstitution().getId();
+        // ── NOTIFICATION ──
         String addedByName = currentUser.getFirstName() + " " + currentUser.getLastName();
-        notificationDispatcher.notifyEquipmentAdded(institutionId, saved.getId(), saved.getName(), addedByName);
+        eventPublisher.publishEvent(new NotificationEvents.EquipmentAddedEvent(
+                department.getInstitution().getId(),
+                saved.getId(),
+                saved.getName(),
+                addedByName
+        ));
 
         return mapToResponse(saved);
     }
@@ -140,11 +145,16 @@ public class EquipmentService {
         equipment.setStatus(newStatus);
         Equipment saved = equipmentRepository.save(equipment);
 
-        // ── NOTIFICATION: Alert dept heads + inst admins about status change ──
-        UUID institutionId = equipment.getDepartment().getInstitution().getId();
+        // ── NOTIFICATION ──
         String changedByName = currentUser.getFirstName() + " " + currentUser.getLastName();
-        notificationDispatcher.notifyEquipmentStatusChanged(
-                institutionId, saved.getId(), saved.getName(), oldStatus, newStatus.name(), changedByName);
+        eventPublisher.publishEvent(new NotificationEvents.EquipmentStatusChangedEvent(
+                equipment.getDepartment().getInstitution().getId(),
+                saved.getId(),
+                saved.getName(),
+                oldStatus,
+                newStatus.name(),
+                changedByName
+        ));
 
         return mapToResponse(saved);
     }
@@ -197,10 +207,14 @@ public class EquipmentService {
 
         Equipment saved = equipmentRepository.save(equipment);
 
-        // ── NOTIFICATION: Alert dept heads + inst admins about equipment edit ──
-        UUID institutionId = department.getInstitution().getId();
+        // ── NOTIFICATION ──
         String updatedByName = currentUser.getFirstName() + " " + currentUser.getLastName();
-        notificationDispatcher.notifyEquipmentUpdated(institutionId, saved.getId(), saved.getName(), updatedByName);
+        eventPublisher.publishEvent(new NotificationEvents.EquipmentUpdatedEvent(
+                equipment.getDepartment().getInstitution().getId(),
+                saved.getId(),
+                saved.getName(),
+                updatedByName
+        ));
 
         return mapToResponse(saved);
     }

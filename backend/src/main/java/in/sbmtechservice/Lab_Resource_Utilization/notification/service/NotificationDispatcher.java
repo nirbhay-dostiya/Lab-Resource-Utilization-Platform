@@ -52,12 +52,15 @@ public class NotificationDispatcher {
      */
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void send(User recipient,
+    public void send(UUID recipientId,
                      NotificationReferenceType type,
                      UUID referenceId,
                      String content) {
-        if (recipient == null) return;
+        if (recipientId == null) return;
         try {
+            User recipient = userRepository.findById(recipientId).orElse(null);
+            if (recipient == null) return;
+            
             Notification notification = Notification.builder()
                     .user(recipient)
                     .referenceType(type)
@@ -71,7 +74,7 @@ public class NotificationDispatcher {
             notificationRepository.save(notification);
             log.debug("[NOTIFY] → {} ({}): {}", recipient.getEmail(), type, content);
         } catch (Exception e) {
-            log.error("[NOTIFY] Failed to save notification for user {}: {}", recipient.getId(), e.getMessage());
+            log.error("[NOTIFY] Failed to save notification for user {}: {}", recipientId, e.getMessage());
         }
     }
 
@@ -215,63 +218,63 @@ public class NotificationDispatcher {
     /**
      * BOOKING CREATED (PENDING_PAYMENT) — Notify the booker to pay their invoice.
      */
-    public void notifyBookingInvoiceGenerated(User booker, UUID bookingId,
+    public void notifyBookingInvoiceGenerated(UUID bookerId, UUID bookingId,
                                               String equipmentName, String amount) {
         String msg = String.format(
                 "Your booking for '%s' has been created. Invoice of ₹%s has been generated. Please complete payment.",
                 equipmentName, amount);
-        send(booker, NotificationReferenceType.INVOICE, bookingId, msg);
+        send(bookerId, NotificationReferenceType.INVOICE, bookingId, msg);
     }
 
     /**
      * BOOKING CONFIRMED — Notify the booker their booking was approved.
      */
-    public void notifyBookingConfirmed(User booker, UUID bookingId,
+    public void notifyBookingConfirmed(UUID bookerId, UUID bookingId,
                                        String equipmentName, String startTime) {
         String msg = String.format(
                 "Your booking for '%s' on %s has been CONFIRMED. You're all set!",
                 equipmentName, startTime);
-        send(booker, NotificationReferenceType.BOOKING, bookingId, msg);
+        send(bookerId, NotificationReferenceType.BOOKING, bookingId, msg);
     }
 
     /**
      * BOOKING CANCELLED — Notify the booker + Dept Heads/Lab Managers of the equipment's institution.
      */
-    public void notifyBookingCancelled(User booker, UUID equipmentInstitutionId,
+    public void notifyBookingCancelled(UUID bookerId, UUID equipmentInstitutionId,
                                        UUID bookingId, String equipmentName,
                                        String cancelledByName) {
         // Notify the booker
-        send(booker, NotificationReferenceType.BOOKING, bookingId,
+        send(bookerId, NotificationReferenceType.BOOKING, bookingId,
                 String.format("Your booking for '%s' has been CANCELLED by %s.", equipmentName, cancelledByName));
 
         // Notify institution staff (if cancelled by someone other than the booker)
         List<User> staff = new ArrayList<>();
         staff.addAll(getLabManagers(equipmentInstitutionId));
         staff.addAll(getDeptHeads(equipmentInstitutionId));
-        staff.remove(booker); // don't double-notify if booker is staff
-        String staffMsg = String.format("Booking for '%s' by %s has been cancelled.", equipmentName, booker.getFirstName() + " " + booker.getLastName());
+        staff.removeIf(u -> u.getId().equals(bookerId)); // don't double-notify if booker is staff
+        String staffMsg = String.format("Booking for '%s' has been cancelled.", equipmentName);
         sendToAll(deduplicate(staff), NotificationReferenceType.BOOKING, bookingId, staffMsg);
     }
 
     /**
      * BOOKING COMPLETED — Notify the booker their session is complete.
      */
-    public void notifyBookingCompleted(User booker, UUID bookingId, String equipmentName) {
+    public void notifyBookingCompleted(UUID bookerId, UUID bookingId, String equipmentName) {
         String msg = String.format(
                 "Your booking session for '%s' has been marked as COMPLETED. Thank you!",
                 equipmentName);
-        send(booker, NotificationReferenceType.BOOKING, bookingId, msg);
+        send(bookerId, NotificationReferenceType.BOOKING, bookingId, msg);
     }
 
     /**
      * MAINTENANCE SCHEDULED — Notify technician + Dept Heads + Inst Admins.
      */
-    public void notifyMaintenanceScheduled(User technician, UUID institutionId,
+    public void notifyMaintenanceScheduled(UUID technicianId, UUID institutionId,
                                            UUID taskId, String equipmentName,
                                            String scheduledDate) {
         // Notify the assigned technician
-        if (technician != null) {
-            send(technician, NotificationReferenceType.MAINTENANCE, taskId,
+        if (technicianId != null) {
+            send(technicianId, NotificationReferenceType.MAINTENANCE, taskId,
                     String.format("You have been assigned a maintenance task for '%s' on %s.",
                             equipmentName, scheduledDate));
         }
@@ -323,8 +326,8 @@ public class NotificationDispatcher {
     /**
      * ACCESS REQUEST APPROVED — Notify the requester.
      */
-    public void notifyAccessRequestApproved(User requester, UUID requestId, String equipmentName) {
-        send(requester, NotificationReferenceType.ACCESS_REQUEST, requestId,
+    public void notifyAccessRequestApproved(UUID requesterId, UUID requestId, String equipmentName) {
+        send(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
                 String.format("Your access request for '%s' has been APPROVED. You can now book this equipment.",
                         equipmentName));
     }
@@ -332,8 +335,8 @@ public class NotificationDispatcher {
     /**
      * ACCESS REQUEST REJECTED — Notify the requester.
      */
-    public void notifyAccessRequestRejected(User requester, UUID requestId, String equipmentName) {
-        send(requester, NotificationReferenceType.ACCESS_REQUEST, requestId,
+    public void notifyAccessRequestRejected(UUID requesterId, UUID requestId, String equipmentName) {
+        send(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
                 String.format("Your access request for '%s' has been REJECTED. Contact the institution admin for details.",
                         equipmentName));
     }
@@ -341,8 +344,8 @@ public class NotificationDispatcher {
     /**
      * WAITLIST FULFILLED — Notify user they got a slot from the waitlist.
      */
-    public void notifyWaitlistFulfilled(User user, UUID waitlistId, String equipmentName) {
-        send(user, NotificationReferenceType.WAITLIST, waitlistId,
+    public void notifyWaitlistFulfilled(UUID userId, UUID waitlistId, String equipmentName) {
+        send(userId, NotificationReferenceType.WAITLIST, waitlistId,
                 String.format("A slot for '%s' became available and your waitlist request has been fulfilled! A new booking has been created for you.",
                         equipmentName));
     }

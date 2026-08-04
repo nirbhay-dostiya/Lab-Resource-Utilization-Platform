@@ -42,11 +42,12 @@ public class BookingController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('SYSTEM_ADMIN') or hasAuthority('DEPT_HEAD') or hasAuthority('LAB_MANAGER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<BookingResponse> updateStatus(
             @PathVariable UUID id,
-            @RequestParam BookingStatus status
+            @RequestParam BookingStatus status,
+            Principal principal
     ) {
-        return ResponseEntity.ok(bookingService.updateBookingStatus(id, status));
+        return ResponseEntity.ok(bookingService.updateBookingStatus(id, status, principal.getName()));
     }
 }
