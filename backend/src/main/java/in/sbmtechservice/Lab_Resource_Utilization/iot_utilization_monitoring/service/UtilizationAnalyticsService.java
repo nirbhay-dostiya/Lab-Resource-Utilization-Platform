@@ -11,6 +11,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.iot_utilization_monitoring.enu
 import in.sbmtechservice.Lab_Resource_Utilization.iot_utilization_monitoring.repository.DailyUtilizationMetricRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.iot_utilization_monitoring.repository.IotTelemetryLogRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UtilizationAnalyticsService {
@@ -47,15 +49,44 @@ public class UtilizationAnalyticsService {
     @jakarta.annotation.PostConstruct
     @Transactional
     public void seedInitialMetrics() {
-        if (metricRepository.count() == 0) {
-            List<Equipment> allEquipment = equipmentRepository.findAll();
-            for (int i = 6; i >= 0; i--) {
-                LocalDate date = LocalDate.now().minusDays(i);
-                for (Equipment equipment : allEquipment) {
+        List<Equipment> allEquipment = equipmentRepository.findAll();
+        if (allEquipment.isEmpty()) {
+            log.warn("seedInitialMetrics: No equipment found in database — skipping seed. Add equipment first.");
+            return;
+        }
+        log.info("seedInitialMetrics: Backfilling last 7 days of utilization metrics for {} equipment items.", allEquipment.size());
+        int seeded = 0;
+        for (int i = 6; i >= 0; i--) {
+            LocalDate date = LocalDate.now().minusDays(i);
+            for (Equipment equipment : allEquipment) {
+                // Idempotent: only calculate if no record exists yet for this equipment+date
+                boolean alreadyExists = metricRepository
+                        .findByEquipmentIdAndRecordDate(equipment.getId(), date)
+                        .isPresent();
+                if (!alreadyExists) {
                     calculateAndSaveDailyMetric(equipment, date);
+                    seeded++;
                 }
             }
         }
+        log.info("seedInitialMetrics: Seeded {} new metric records.", seeded);
+    }
+
+    /**
+     * Manual recalculation trigger — called by the admin /recalculate endpoint.
+     * Recalculates (upserts) metrics for the last {@code daysBack} days across all equipment.
+     */
+    @Transactional
+    public void recalculateRange(int daysBack) {
+        List<Equipment> allEquipment = equipmentRepository.findAll();
+        log.info("recalculateRange: Recalculating last {} days for {} equipment items.", daysBack, allEquipment.size());
+        for (int i = daysBack - 1; i >= 0; i--) {
+            LocalDate date = LocalDate.now().minusDays(i);
+            for (Equipment equipment : allEquipment) {
+                calculateAndSaveDailyMetric(equipment, date);
+            }
+        }
+        log.info("recalculateRange: Done.");
     }
 
     public void calculateAndSaveDailyMetric(Equipment equipment, LocalDate date) {

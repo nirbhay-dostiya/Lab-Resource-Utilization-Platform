@@ -11,3 +11,39 @@ body {
   background-color: #ffffff;
   color: #333333;
 }
+
+/* ── A4 Print Optimisation for Enterprise Invoice ─────────────────────── */
+@media print {
+  /* A4 page setup: 210 × 297 mm with comfortable margins */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm 18mm 15mm;
+  }
+
+  /* Hide every element on the page by default */
+  body * { visibility: hidden; }
+
+  /* Show only the invoice body and all its children */
+  .enterprise-invoice-body,
+  .enterprise-invoice-body * { visibility: visible; }
+
+  /* Position the invoice to fill the page from the top-left */
+  .enterprise-invoice-body {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: white !important;
+  }
+
+  /* Prevent rows from splitting across pages */
+  tr, .invoice-row { page-break-inside: avoid; }
+
+  /* Ensure background colours & borders render in PDF */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+

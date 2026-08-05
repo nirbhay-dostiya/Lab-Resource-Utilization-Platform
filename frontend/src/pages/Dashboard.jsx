@@ -196,7 +196,7 @@ const Dashboard = () => {
   const [selectedTransactionDetails, setSelectedTransactionDetails] = useState(null);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
 
-  // ── Module 1: Work Order State ─────────────────────────────────────────────
+  // â”€â”€ Module 1: Work Order State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [workOrderForm, setWorkOrderForm] = useState({
     equipmentId: '', taskType: 'PREVENTIVE', priority: 'MEDIUM',
     description: '', scheduledDate: '', technicianId: ''
@@ -204,20 +204,20 @@ const Dashboard = () => {
   const [isSubmittingWorkOrder, setIsSubmittingWorkOrder] = useState(false);
   const [workOrderStatusFilter, setWorkOrderStatusFilter] = useState('ALL');
   const [showWorkOrderForm, setShowWorkOrderForm] = useState(false);
-  const [workOrderTransition, setWorkOrderTransition] = useState({ id: null, targetStatus: '', notes: '', downtimeHours: '' });
+  const [workOrderTransition, setWorkOrderTransition] = useState({ id: null, currentStatus: '', targetStatus: '', notes: '', downtimeHours: '' });
   const [showTransitionModal, setShowTransitionModal] = useState(false);
 
-  // ── Module 2: Calibration Compliance State ─────────────────────────────────
+  // â”€â”€ Module 2: Calibration Compliance State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [complianceDashboard, setComplianceDashboard] = useState([]);
   const [isFetchingCompliance, setIsFetchingCompliance] = useState(false);
   const [calibrationForm, setCalibrationForm] = useState({
     equipmentId: '', calibrationDate: '', expiryDate: '',
-    vendorName: '', status: 'PASS', certificateUrl: '', toleranceMetrics: ''
+    vendorName: '', status: 'VALID', certificateUrl: '', toleranceMetrics: ''
   });
   const [showCalibrationForm, setShowCalibrationForm] = useState(false);
   const [isSubmittingCalibration, setIsSubmittingCalibration] = useState(false);
 
-  // ── Module 3: Billing Approval State ──────────────────────────────────────
+  // â”€â”€ Module 3: Billing Approval State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [isApprovingInvoice, setIsApprovingInvoice] = useState(false);
   const [isSubmittingForApproval, setIsSubmittingForApproval] = useState(false);
   const [autoInvoiceForm, setAutoInvoiceForm] = useState({
@@ -226,13 +226,13 @@ const Dashboard = () => {
   const [showAutoInvoiceForm, setShowAutoInvoiceForm] = useState(false);
   const [fundingSources, setFundingSources] = useState([]);
 
-  // ── Module 4: Persona Analytics State ─────────────────────────────────────
+  // â”€â”€ Module 4: Persona Analytics State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [researcherDashboard, setResearcherDashboard] = useState(null);
   const [labManagerDashboard, setLabManagerDashboard] = useState(null);
   const [systemAdminDashboard, setSystemAdminDashboard] = useState(null);
   const [isFetchingPersonaDashboard, setIsFetchingPersonaDashboard] = useState(false);
 
-  // ── Module 5: OEE Report State ─────────────────────────────────────────────
+  // â”€â”€ Module 5: OEE Report State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [reportForm, setReportForm] = useState({ from: '', to: '' });
   const [reportId, setReportId] = useState(null);
   const [reportStatus, setReportStatus] = useState('');
@@ -241,7 +241,7 @@ const Dashboard = () => {
   const [activeReportTab, setActiveReportTab] = useState('generate'); // 'generate' | 'results'
   const reportPollRef = useRef(null);
 
-  // ── New enterprise fetch functions ─────────────────────────────────────────
+  // â”€â”€ New enterprise fetch functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const fetchComplianceDashboard = async () => {
     setIsFetchingCompliance(true);
@@ -328,7 +328,7 @@ const Dashboard = () => {
     try {
       await api.post('/maintenance', {
         equipmentId: workOrderForm.equipmentId,
-        taskType: workOrderForm.taskType,
+        maintenanceType: workOrderForm.taskType,
         priority: workOrderForm.priority,
         description: workOrderForm.description,
         scheduledDate: workOrderForm.scheduledDate + 'T08:00:00',
@@ -375,7 +375,7 @@ const Dashboard = () => {
         toleranceMetrics: calibrationForm.toleranceMetrics || null,
       });
       setShowCalibrationForm(false);
-      setCalibrationForm({ equipmentId: '', calibrationDate: '', expiryDate: '', vendorName: '', status: 'PASS', certificateUrl: '', toleranceMetrics: '' });
+      setCalibrationForm({ equipmentId: '', calibrationDate: '', expiryDate: '', vendorName: '', status: 'VALID', certificateUrl: '', toleranceMetrics: '' });
       fetchCalibrationRecords();
       fetchComplianceDashboard();
       alert('Calibration record logged successfully!');
@@ -477,7 +477,7 @@ const Dashboard = () => {
       fetchPersonaDashboard();
     }
     if (activeSection === 'reports') {
-      // No auto-fetch — user initiates report generation
+      // No auto-fetch â€” user initiates report generation
     }
   }, [activeSection, isSystemAdmin, selectedDepartment, selectedInstitution, equipmentList.length]);
 
@@ -724,10 +724,17 @@ const Dashboard = () => {
   const fetchHeatmapData = async () => {
     setIsFetchingHeatmap(true);
     try {
+      // Use local date (not UTC) to avoid IST +05:30 shifting the date window
+      const toLocalDateStr = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - 7);
-      const res = await api.get(`/v1/utilization-analytics/heatmap?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+      const res = await api.get(`/v1/utilization-analytics/heatmap?startDate=${toLocalDateStr(start)}&endDate=${toLocalDateStr(end)}`);
       if (Array.isArray(res.data)) {
         setHeatmapData(res.data);
       } else {
@@ -735,6 +742,7 @@ const Dashboard = () => {
       }
     } catch (err) {
       console.error("Failed to fetch heatmap data", err);
+      setHeatmapData([]);
     } finally {
       setIsFetchingHeatmap(false);
     }
@@ -743,10 +751,17 @@ const Dashboard = () => {
   const fetchPerformanceData = async () => {
     setIsFetchingPerformance(true);
     try {
+      // Use local date (not UTC) to avoid IST +05:30 shifting the date window
+      const toLocalDateStr = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - 7);
-      const res = await api.get(`/v1/utilization-analytics/performance?startDate=${start.toISOString().split('T')[0]}&endDate=${end.toISOString().split('T')[0]}`);
+      const res = await api.get(`/v1/utilization-analytics/performance?startDate=${toLocalDateStr(start)}&endDate=${toLocalDateStr(end)}`);
       if (res.data) {
         setPerformanceData(res.data);
       }
@@ -1404,7 +1419,7 @@ const Dashboard = () => {
             </div>
           </div>
           <div className="flex items-center gap-5 relative">
-            {/* ── Notification Bell ── */}
+            {/* â”€â”€ Notification Bell â”€â”€ */}
             <div className="relative" ref={notificationRef}>
               <button
                 id="notification-bell-btn"
@@ -1422,7 +1437,7 @@ const Dashboard = () => {
                 )}
               </button>
 
-              {/* ── Notification Panel ── */}
+              {/* â”€â”€ Notification Panel â”€â”€ */}
               {showNotifications && (
                 <div
                   role="dialog"
@@ -2282,7 +2297,7 @@ const Dashboard = () => {
                                     Cancel
                                   </button>
                                 ) : (
-                                  <span className="text-gray-400 text-xs">—</span>
+                                  <span className="text-gray-400 text-xs">â€”</span>
                                 )}
                               </td>
                             </tr>
@@ -2342,7 +2357,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-800 font-medium leading-tight mb-1">{b.userName} <span className="font-normal text-gray-500">requested</span> {b.equipmentName}</p>
-                      <span className="text-xs text-gray-400">{new Date(b.startTime).toLocaleDateString()} • {b.status.replace('_', ' ')}</span>
+                      <span className="text-xs text-gray-400">{new Date(b.startTime).toLocaleDateString()} â€¢ {b.status.replace('_', ' ')}</span>
                     </div>
                   </div>
                 ))}
@@ -3350,7 +3365,7 @@ const Dashboard = () => {
                     <td className="py-4 text-gray-600">{new Date(record.nextDueDate).toLocaleDateString()}</td>
                     <td className="py-4 text-gray-600">{record.performedBy}</td>
                     <td className="py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${record.result === 'PASS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${record.result === 'VALID' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                         }`}>
                         {record.result}
                       </span>
@@ -3366,7 +3381,7 @@ const Dashboard = () => {
             </table>
           </div>
 
-          {/* ── Module 1 Enhancement: Work Order Create Form ──────────────── */}
+          {/* â”€â”€ Module 1 Enhancement: Work Order Create Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {canManage && (
             <div className="mt-10">
               <div className="flex items-center justify-between mb-4">
@@ -3393,8 +3408,8 @@ const Dashboard = () => {
                     <select value={workOrderForm.taskType} onChange={e => setWorkOrderForm(f => ({...f, taskType: e.target.value}))}
                       className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400">
                       <option value="PREVENTIVE">Preventive</option>
-                      <option value="CORRECTIVE">Corrective</option>
-                      <option value="EMERGENCY">Emergency</option>
+                      <option value="INSPECTION">Inspection</option>
+                      <option value="REPAIR">Repair</option>
                     </select>
                     <select value={workOrderForm.priority} onChange={e => setWorkOrderForm(f => ({...f, priority: e.target.value}))}
                       className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400">
@@ -3403,7 +3418,8 @@ const Dashboard = () => {
                       <option value="HIGH">High</option>
                       <option value="CRITICAL">Critical</option>
                     </select>
-                    <input type="date" value={workOrderForm.scheduledDate} onChange={e => setWorkOrderForm(f => ({...f, scheduledDate: e.target.value}))}
+                    <input type={workOrderForm.scheduledDate ? "date" : "text"} onFocus={e => e.target.type = 'date'} onBlur={e => e.target.type = workOrderForm.scheduledDate ? 'date' : 'text'}
+                      value={workOrderForm.scheduledDate} onChange={e => setWorkOrderForm(f => ({...f, scheduledDate: e.target.value}))}
                       className="border border-indigo-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-indigo-400"
                       placeholder="Scheduled Date *" />
                     <select value={workOrderForm.technicianId} onChange={e => setWorkOrderForm(f => ({...f, technicianId: e.target.value}))}
@@ -3475,7 +3491,7 @@ const Dashboard = () => {
                           <td className="py-3 px-4">
                             {task.status !== 'VERIFIED' && (
                               <button
-                                onClick={() => { setWorkOrderTransition({id: task.id, targetStatus: '', notes: '', downtimeHours: ''}); setShowTransitionModal(true); }}
+                                onClick={() => { setWorkOrderTransition({id: task.id, currentStatus: task.status, targetStatus: '', notes: '', downtimeHours: ''}); setShowTransitionModal(true); }}
                                 className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-semibold transition-colors">
                                 Update Status
                               </button>
@@ -3492,7 +3508,7 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* ── Module 2 Enhancement: Calibration Compliance Dashboard ──────── */}
+          {/* â”€â”€ Module 2 Enhancement: Calibration Compliance Dashboard â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {canManage && (
             <div className="mt-10">
               <div className="flex items-center justify-between mb-4">
@@ -3514,22 +3530,24 @@ const Dashboard = () => {
                       <option value="">Select Equipment *</option>
                       {equipmentList.map(eq => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
                     </select>
-                    <input type="date" value={calibrationForm.calibrationDate} onChange={e => setCalibrationForm(f => ({...f, calibrationDate: e.target.value}))}
+                    <input type={calibrationForm.calibrationDate ? "date" : "text"} onFocus={e => e.target.type = 'date'} onBlur={e => e.target.type = calibrationForm.calibrationDate ? 'date' : 'text'}
+                      value={calibrationForm.calibrationDate} onChange={e => setCalibrationForm(f => ({...f, calibrationDate: e.target.value}))}
                       placeholder="Calibration Date *" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
-                    <input type="date" value={calibrationForm.expiryDate} onChange={e => setCalibrationForm(f => ({...f, expiryDate: e.target.value}))}
-                      placeholder="Expiry Date *" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
+                    <input type={calibrationForm.expiryDate ? "date" : "text"} onFocus={e => e.target.type = 'date'} onBlur={e => e.target.type = calibrationForm.expiryDate ? 'date' : 'text'}
+                      value={calibrationForm.expiryDate} onChange={e => setCalibrationForm(f => ({...f, expiryDate: e.target.value}))}
+                      placeholder="Next Due (Expiry) Date *" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
                     <input type="text" value={calibrationForm.vendorName} onChange={e => setCalibrationForm(f => ({...f, vendorName: e.target.value}))}
                       placeholder="Vendor / Lab Name" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
                     <select value={calibrationForm.status} onChange={e => setCalibrationForm(f => ({...f, status: e.target.value}))}
                       className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400">
-                      <option value="PASS">PASS</option>
-                      <option value="FAIL">FAIL</option>
-                      <option value="CONDITIONAL">CONDITIONAL</option>
+                      <option value="VALID">VALID</option>
+                      <option value="FAILED">FAILED</option>
+                      <option value="EXPIRED">EXPIRED</option>
                     </select>
                     <input type="url" value={calibrationForm.certificateUrl} onChange={e => setCalibrationForm(f => ({...f, certificateUrl: e.target.value}))}
                       placeholder="Certificate URL" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
                     <textarea value={calibrationForm.toleranceMetrics} onChange={e => setCalibrationForm(f => ({...f, toleranceMetrics: e.target.value}))}
-                      placeholder='Tolerance Metrics JSON (e.g. {"accuracy": "±0.02%"})'
+                      placeholder='Tolerance Metrics JSON (e.g. {"accuracy": "Â±0.02%"})'
                       className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400 md:col-span-2" rows={2} />
                   </div>
                   <div className="flex justify-end mt-4">
@@ -3557,10 +3575,10 @@ const Dashboard = () => {
                           <div className="font-bold text-gray-800 text-sm">{item.equipmentName}</div>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badges[urgency]}`}>{urgency}</span>
                         </div>
-                        <div className="text-2xl font-black text-gray-700">{daysLeft < 999 ? daysLeft : '—'}<span className="text-sm font-medium text-gray-500 ml-1">days left</span></div>
+                        <div className="text-2xl font-black text-gray-700">{daysLeft < 999 ? daysLeft : 'â€”'}<span className="text-sm font-medium text-gray-500 ml-1">days left</span></div>
                         <div className="text-xs text-gray-500 mt-2">Expires: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'N/A'}</div>
                         <div className="text-xs text-gray-500">Vendor: {item.vendorName || 'N/A'}</div>
-                        <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${item.lastResult === 'PASS' ? 'bg-green-100 text-green-700' : item.lastResult === 'FAIL' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${item.lastResult === 'VALID' ? 'bg-green-100 text-green-700' : item.lastResult === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
                           Last: {item.lastResult || 'N/A'}
                         </span>
                       </div>
@@ -3578,7 +3596,7 @@ const Dashboard = () => {
         </section>
       )}
 
-      {/* ── Work Order Status Transition Modal ──────────────────────────────── */}
+      {/* â”€â”€ Work Order Status Transition Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showTransitionModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowTransitionModal(false)}>
           <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -3587,10 +3605,11 @@ const Dashboard = () => {
               <select value={workOrderTransition.targetStatus} onChange={e => setWorkOrderTransition(t => ({...t, targetStatus: e.target.value}))}
                 className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400">
                 <option value="">Select Next Status *</option>
-                <option value="ASSIGNED">ASSIGNED</option>
-                <option value="IN_PROGRESS">IN_PROGRESS</option>
-                <option value="COMPLETED">COMPLETED</option>
-                <option value="VERIFIED">VERIFIED</option>
+                {workOrderTransition.currentStatus === 'CREATED' && <option value="ASSIGNED">ASSIGNED</option>}
+                {workOrderTransition.currentStatus === 'ASSIGNED' && <option value="IN_PROGRESS">IN_PROGRESS</option>}
+                {workOrderTransition.currentStatus === 'IN_PROGRESS' && <option value="COMPLETED">COMPLETED</option>}
+                {workOrderTransition.currentStatus === 'COMPLETED' && <option value="VERIFIED">VERIFIED</option>}
+                <option value="CANCELLED">CANCELLED</option>
               </select>
               <input type="number" min="0" step="0.5" placeholder="Downtime Hours (if any)"
                 value={workOrderTransition.downtimeHours} onChange={e => setWorkOrderTransition(t => ({...t, downtimeHours: e.target.value}))}
@@ -3606,7 +3625,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* ── Module 5: OEE Reports Section ───────────────────────────────────── */}
+      {/* â”€â”€ Module 5: OEE Reports Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {activeSection === 'reports' && (
         <section className="flex flex-col gap-6 animate-fade-in">
           {/* Tab switcher */}
@@ -3614,7 +3633,7 @@ const Dashboard = () => {
             {['generate', 'results'].map(tab => (
               <button key={tab} onClick={() => setActiveReportTab(tab)}
                 className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all capitalize ${activeReportTab === tab ? 'bg-brand-orange text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}>
-                {tab === 'generate' ? '⚙️ Generate Report' : '📊 Results'}
+                {tab === 'generate' ? 'âš™ï¸ Generate Report' : 'ðŸ“Š Results'}
               </button>
             ))}
           </div>
@@ -3715,7 +3734,7 @@ const Dashboard = () => {
                     </table>
                   </div>
                   <div className="mt-4 flex gap-6 text-xs text-gray-500">
-                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-400 inline-block" /> OEE ≥ 65% (World-Class)</span>
+                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-400 inline-block" /> OEE â‰¥ 65% (World-Class)</span>
                     <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-400 inline-block" /> 40–64% (Average)</span>
                     <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> &lt;40% (Low)</span>
                   </div>
@@ -3735,7 +3754,7 @@ const Dashboard = () => {
       {activeSection === 'billing' && (
         <section className="flex flex-col gap-6 animate-fade-in">
 
-          {/* ── Module 3 Enhancement: Auto-Invoice + Approval UI ────────────── */}
+          {/* â”€â”€ Module 3 Enhancement: Auto-Invoice + Approval UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {(hasRole('LAB_MANAGER') || hasRole('DEPT_HEAD') || hasRole('INSTITUTION_ADMIN')) && selectedDepartment && (
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between">
@@ -3782,7 +3801,7 @@ const Dashboard = () => {
               </div>
               {isSystemAdmin && (
                 <div className="flex items-center gap-2 text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-xl">
-                  <Shield size={14} /> Admin View — Payments are managed by institution members
+                  <Shield size={14} /> Admin View â€” Payments are managed by institution members
                 </div>
               )}
             </div>
@@ -3856,7 +3875,7 @@ const Dashboard = () => {
                     <tr key={invoice.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { setSelectedInvoiceDetails(invoice); setIsInvoiceViewOpen(true); }}>
                       <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={invoice.id}>INV-{invoice.id?.substring(0, 8).toUpperCase()}</td>
                       {isSystemAdmin && (
-                        <td className="py-4 text-gray-600 text-xs">{invoice.billedToInstitutionName || '—'}</td>
+                        <td className="py-4 text-gray-600 text-xs">{invoice.billedToInstitutionName || 'â€”'}</td>
                       )}
                       <td className="py-4 text-gray-600 text-xs">
                         {invoice.lineItems && invoice.lineItems.length > 0 ? invoice.lineItems[0].equipmentName || invoice.lineItems[0].description : invoice.bookingId}
@@ -3997,7 +4016,7 @@ const Dashboard = () => {
                         onClick={() => { setSelectedTransactionDetails(tx); setIsTransactionModalOpen(true); }}
                       >
                         <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={tx?.id}>{tx?.id ? String(tx.id).substring(0, 8) : 'N/A'}...</td>
-                        <td className="py-4 text-gray-500 text-xs font-mono">{tx?.invoiceId ? 'INV-' + String(tx.invoiceId).substring(0, 8).toUpperCase() : '—'}</td>
+                        <td className="py-4 text-gray-500 text-xs font-mono">{tx?.invoiceId ? 'INV-' + String(tx.invoiceId).substring(0, 8).toUpperCase() : 'â€”'}</td>
                         <td className="py-4 text-gray-600">{tx?.transactionDate ? new Date(tx.transactionDate).toLocaleDateString() : 'N/A'}</td>
                         <td className="py-4 text-gray-600">{tx?.paymentMethod || 'N/A'}</td>
                         <td className="py-4 text-gray-600">{tx?.referenceNumber || 'N/A'}</td>
@@ -4806,149 +4825,31 @@ const Dashboard = () => {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl relative animate-fade-in flex flex-col">
 
-        {/* Modal Header Actions */}
-        <div className="sticky top-0 bg-white/80 backdrop-blur-md px-8 py-4 border-b border-gray-100 flex justify-between items-center z-10 rounded-t-3xl">
-          <div className="flex gap-4">
+        {/* Sticky action bar â€” hidden when printing */}
+        <div className="sticky top-0 bg-white/90 backdrop-blur-md px-8 py-4 border-b border-slate-100 flex justify-between items-center z-10 rounded-t-3xl print:hidden">
+          <div className="flex gap-3">
             <button
               onClick={() => window.print()}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+              className="flex items-center gap-2 border-l-4 bg-white hover:bg-orange-50 text-orange-500 px-5 py-2.5 rounded-xl font-semibold text-sm transition-colors shadow-sm"
+              style={{borderLeftColor:'#ff4500', borderTop:'1px solid #ffe4d9', borderRight:'1px solid #ffe4d9', borderBottom:'1px solid #ffe4d9'}}
             >
-              <FileText size={18} /> Print Invoice
+              <FileText size={15} /> Print / Save PDF
             </button>
           </div>
           <button
             onClick={() => { setIsInvoiceViewOpen(false); setSelectedInvoiceDetails(null); }}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded-lg hover:bg-slate-100"
           >
-            <X size={24} />
+            <X size={22} />
           </button>
         </div>
 
-        {/* Printable Invoice Container */}
-        <div className="p-10 text-gray-800" id="printable-invoice">
-
-          {/* Invoice Header */}
-          <div className="flex justify-between items-start mb-12">
-            <div>
-              <h1 className="text-4xl font-black text-gray-900 tracking-tight">INVOICE</h1>
-              <p className="text-gray-500 mt-2 font-medium font-mono">INV-{selectedInvoiceDetails.id?.substring(0, 8).toUpperCase()}</p>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-brand-orange flex items-center justify-end gap-2 mb-2">
-                <Activity size={24} /> LabResource
-              </div>
-              <p className="text-gray-600 text-sm">Central Equipment Booking System</p>
-              <p className="text-gray-600 text-sm">support@labresource.edu</p>
-            </div>
-          </div>
-
-          {/* Billing Details */}
-          <div className="grid grid-cols-2 gap-12 mb-12">
-            <div>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-2">Billed To</h3>
-              <div className="bg-gray-50 p-4 rounded-xl">
-                <p className="font-bold text-lg mb-1">{selectedInvoiceDetails.billedToInstitutionName || 'N/A'}</p>
-                {selectedInvoiceDetails.billedToDepartmentName && (
-                  <p className="text-gray-600">{selectedInvoiceDetails.billedToDepartmentName}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col justify-end">
-              <table className="w-full text-right">
-                <tbody>
-                  <tr>
-                    <td className="py-2 text-gray-500 pr-4">Invoice Date:</td>
-                    <td className="py-2 font-medium">{selectedInvoiceDetails.invoiceDate ? new Date(selectedInvoiceDetails.invoiceDate).toLocaleDateString() : 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-gray-500 pr-4">Due Date:</td>
-                    <td className="py-2 font-medium">{selectedInvoiceDetails.dueDate ? new Date(selectedInvoiceDetails.dueDate).toLocaleDateString() : 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-gray-500 pr-4">Status:</td>
-                    <td className="py-2">
-                      <span className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${selectedInvoiceDetails.status === 'PAID' ? 'bg-green-100 text-green-700' :
-                        selectedInvoiceDetails.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                        {selectedInvoiceDetails.status}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Line Items Table */}
-          <div className="mb-12">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-gray-900 text-white text-sm uppercase tracking-wider">
-                  <th className="py-3 px-4 font-semibold rounded-tl-lg">Description</th>
-                  <th className="py-3 px-4 font-semibold">Qty / Hrs</th>
-                  <th className="py-3 px-4 font-semibold">Rate</th>
-                  <th className="py-3 px-4 font-semibold text-right rounded-tr-lg">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {selectedInvoiceDetails.lineItems && selectedInvoiceDetails.lineItems.map((item, index) => (
-                  <tr key={index} className="hover:bg-gray-50/50">
-                    <td className="py-5 px-4">
-                      <div className="font-bold text-gray-900 text-base mb-1">
-                        {item.equipmentName || item.description || 'Service Fee'}
-                      </div>
-                      <div className="text-sm text-gray-500 flex flex-col gap-1">
-                        {item.equipmentInstituteName && (
-                          <span className="flex items-center gap-1"><span className="font-medium text-gray-600">Provider:</span> {item.equipmentInstituteName}</span>
-                        )}
-                        {item.bookingStartTime && item.bookingEndTime && (
-                          <span className="flex items-center gap-1">
-                            <span className="font-medium text-gray-600">Period:</span>
-                            {new Date(item.bookingStartTime).toLocaleString()} — {new Date(item.bookingEndTime).toLocaleString()}
-                          </span>
-                        )}
-                        {item.referenceId && (
-                          <span className="flex items-center gap-1 text-xs mt-1 text-gray-400">Ref ID: {item.referenceId}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-5 px-4 font-medium text-gray-700">{item.quantity || 1}</td>
-                    <td className="py-5 px-4 font-medium text-gray-700">₹{item.unitPrice || 0}</td>
-                    <td className="py-5 px-4 font-bold text-gray-900 text-right">₹{item.lineTotal || 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Invoice Total */}
-          <div className="flex justify-end mb-16">
-            <div className="w-1/2 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-gray-500">Subtotal</span>
-                <span className="font-medium">₹{selectedInvoiceDetails.totalAmount}</span>
-              </div>
-              <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-200">
-                <span className="text-gray-500">Tax</span>
-                <span className="font-medium">₹0.00</span>
-              </div>
-              <div className="flex justify-between items-center text-2xl font-black text-gray-900">
-                <span>Total</span>
-                <span>₹{selectedInvoiceDetails.totalAmount}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="border-t border-gray-200 pt-8 text-center text-sm text-gray-400">
-            <p>Thank you for using LabResource Central Equipment Booking System.</p>
-            <p className="mt-1">For any queries regarding this invoice, please contact support@labresource.edu.</p>
-          </div>
-        </div>
+        {/* Invoice body */}
+        <EnterpriseInvoiceBody inv={selectedInvoiceDetails} />
       </div>
     </div>
   )}
+
 
   {/* Notification View Modal */}
   {selectedNotification && (
@@ -5228,7 +5129,7 @@ const Dashboard = () => {
                     {kpiModalData.map(item => (
                       <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                         <td className="py-4 font-medium text-gray-800">{item.name}</td>
-                        <td className="py-4 text-gray-500">{item.modelNumber || '—'}</td>
+                        <td className="py-4 text-gray-500">{item.modelNumber || 'â€”'}</td>
                         <td className="py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                             item.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' :
@@ -5258,10 +5159,10 @@ const Dashboard = () => {
                   <tbody>
                     {kpiModalData.map(item => (
                       <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                        <td className="py-4 font-medium text-gray-800">{item.userName || '—'}</td>
-                        <td className="py-4 text-gray-600">{item.equipmentName || '—'}</td>
+                        <td className="py-4 font-medium text-gray-800">{item.userName || 'â€”'}</td>
+                        <td className="py-4 text-gray-600">{item.equipmentName || 'â€”'}</td>
                         <td className="py-4 text-gray-500 text-xs">
-                          {item.startTime ? new Date(item.startTime).toLocaleString() : '—'}
+                          {item.startTime ? new Date(item.startTime).toLocaleString() : 'â€”'}
                           {item.endTime ? ` → ${new Date(item.endTime).toLocaleTimeString()}` : ''}
                         </td>
                         <td className="py-4">
@@ -5313,10 +5214,10 @@ const Dashboard = () => {
                   <tbody>
                     {kpiModalData.map(item => (
                       <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                        <td className="py-4 font-medium text-gray-800">{item.userName || '—'}</td>
-                        <td className="py-4 text-gray-600">{item.equipmentName || '—'}</td>
+                        <td className="py-4 font-medium text-gray-800">{item.userName || 'â€”'}</td>
+                        <td className="py-4 text-gray-600">{item.equipmentName || 'â€”'}</td>
                         <td className="py-4 text-gray-500 text-xs">
-                          {item.startTime ? new Date(item.startTime).toLocaleString() : '—'}
+                          {item.startTime ? new Date(item.startTime).toLocaleString() : 'â€”'}
                           {item.endTime ? ` → ${new Date(item.endTime).toLocaleTimeString()}` : ''}
                         </td>
                         <td className="py-4">
@@ -5353,3 +5254,294 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
+// ---------------------------------------------------------------------------------- 
+// EnterpriseInvoiceBody — Brand-matched, A4 print-optimised invoice layout
+// Uses the LabResource brand orange (#ff4500) as accent throughout.
+// ---------------------------------------------------------------------------------- 
+function EnterpriseInvoiceBody({ inv }) {
+  if (!inv) return null;
+
+  // INR currency formatter for all BigDecimal values from the backend
+  const fmt = (v) => new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR',
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(parseFloat(v ?? 0));
+
+  const fmtDate = (d, opts = {day:'2-digit', month:'short', year:'numeric'}) =>
+    d ? new Date(d).toLocaleDateString('en-IN', opts) : '—';
+
+  // Status badge styles
+  const statusStyle = {
+    PAID:             { bg: '#ecfdf5', border: '#6ee7b7', color: '#047857', label: '✓ PAID' },
+    ISSUED:           { bg: '#eff6ff', border: '#93c5fd', color: '#1d4ed8', label: 'ISSUED' },
+    APPROVED:         { bg: '#eef2ff', border: '#a5b4fc', color: '#4338ca', label: 'APPROVED' },
+    PENDING_APPROVAL: { bg: '#fffbeb', border: '#fcd34d', color: '#92400e', label: 'PENDING' },
+    DRAFT:            { bg: '#f8fafc', border: '#cbd5e1', color: '#475569', label: 'DRAFT' },
+    OVERDUE:          { bg: '#fef2f2', border: '#fca5a5', color: '#b91c1c', label: 'OVERDUE' },
+  };
+  const ss = statusStyle[inv.status] ?? statusStyle.DRAFT;
+
+  const subtotal   = parseFloat(inv.subtotalAmount ?? inv.totalAmount ?? 0);
+  const taxAmount  = parseFloat(inv.taxAmount ?? 0);
+  const grandTotal = parseFloat(inv.totalAmount ?? 0);
+  const overheadPct = inv.overheadRate ? (parseFloat(inv.overheadRate) * 100).toFixed(0) : '0';
+  const v = inv.vendor ?? {};
+
+  return (
+    <div className="enterprise-invoice-body bg-white font-sans" style={{color:'#1e293b'}}>
+
+      {/* â”€â”€ BRAND HEADER STRIP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* -- BRAND HEADER STRIP -- */}
+      <div style={{background:'linear-gradient(135deg, #fff3e8 0%, #ffe8d2 100%)', padding:'20px 40px 18px', borderBottom:'2px solid #fdd5b0'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          {/* Brand */}
+          <div>
+            <div style={{display:'flex', alignItems:'center', gap:'8px', marginBottom:'2px'}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c2410c" strokeWidth="2.5">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+              <span style={{fontSize:'22px', fontWeight:'900', color:'#9a3412', letterSpacing:'-0.5px'}}>LabResource</span>
+            </div>
+            <p style={{fontSize:'10px', color:'#c2410c', textTransform:'uppercase', letterSpacing:'1.5px'}}>
+              Central Equipment Booking System
+            </p>
+          </div>
+          {/* INVOICE label */}
+          <div style={{textAlign:'right'}}>
+            <p style={{fontSize:'12px', fontWeight:'700', color:'#9a3412', letterSpacing:'5px', textTransform:'uppercase', lineHeight:'1', padding:'5px 12px', background:'rgba(194,65,12,0.1)', border:'1px solid #fdd5b0', borderRadius:'6px', display:'inline-block'}}>INVOICE</p>
+            <p style={{fontSize:'11px', fontFamily:'monospace', color:'#c2410c', marginTop:'4px'}}>
+              {inv.id ? `#INV-${inv.id.substring(0,8).toUpperCase()}` : '#DRAFT'}
+            </p>
+            {inv.billingPeriodStart && inv.billingPeriodEnd && (
+              <p style={{fontSize:'9px', color:'#c2410c', marginTop:'2px', opacity:0.75}}>
+                Period: {fmtDate(inv.billingPeriodStart)} - {fmtDate(inv.billingPeriodEnd)}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* â”€â”€ BODY CONTENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div style={{padding:'28px 40px 32px'}}>
+
+        {/* â”€â”€ SECTION 2: Address + Metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'16px', marginBottom:'28px'}}>
+
+          {/* Remit To */}
+          <div>
+            <p style={{fontSize:'9px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'2px', color:'#ff4500', marginBottom:'6px'}}>
+              Remit To
+            </p>
+            <div style={{border:'1px solid #ffe4d9', borderRadius:'10px', padding:'12px 14px', background:'#fff8f6'}}>
+              <p style={{fontWeight:'700', fontSize:'13px', color:'#1e293b'}}>{v.platformName ?? 'LabResource'}</p>
+              <p style={{fontSize:'10px', color:'#64748b', marginTop:'2px'}}>{v.legalEntity ?? 'SBM TechServices Pvt. Ltd.'}</p>
+              <p style={{fontSize:'10px', color:'#94a3b8', marginTop:'8px'}}>{v.addressLine1 ?? 'Block A, Research Park, Sector 125'}</p>
+              <p style={{fontSize:'10px', color:'#94a3b8'}}>{v.addressLine2 ?? 'Noida, UP – 201303, India'}</p>
+              <p style={{fontSize:'10px', color:'#94a3b8', marginTop:'6px'}}>
+                <span style={{color:'#64748b', fontWeight:'600'}}>Tax ID:</span> {v.taxId ?? 'GSTIN: 09AABCS1234Q1ZX'}
+              </p>
+              <p style={{fontSize:'10px', color:'#94a3b8'}}>{v.website ?? 'www.labresource.edu'}</p>
+            </div>
+          </div>
+
+          {/* Billed To */}
+          <div>
+            <p style={{fontSize:'9px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'2px', color:'#ff4500', marginBottom:'6px'}}>
+              Billed To
+            </p>
+            <div style={{border:'1px solid #e2e8f0', borderRadius:'10px', padding:'12px 14px', background:'#f8fafc'}}>
+              <p style={{fontWeight:'700', fontSize:'13px', color:'#1e293b'}}>
+                {inv.billedToInstitutionName || inv.billedToDepartmentName || 'Client'}
+              </p>
+              {inv.billedToDepartmentName && inv.billedToInstitutionName && (
+                <p style={{fontSize:'10px', color:'#64748b', marginTop:'2px'}}>{inv.billedToDepartmentName}</p>
+              )}
+              <p style={{fontSize:'10px', color:'#94a3b8', marginTop:'8px'}}>India</p>
+            </div>
+          </div>
+
+          {/* Invoice Details */}
+          <div>
+            <p style={{fontSize:'9px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'2px', color:'#ff4500', marginBottom:'6px'}}>
+              Invoice Details
+            </p>
+            <div style={{border:'1px solid #e2e8f0', borderRadius:'10px', padding:'12px 14px', background:'#f8fafc'}}>
+              {/* Status badge */}
+              <span style={{
+                display:'inline-block', padding:'3px 10px', borderRadius:'999px', fontSize:'10px',
+                fontWeight:'700', textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:'10px',
+                background: ss.bg, border:`1px solid ${ss.border}`, color: ss.color
+              }}>{inv.status === 'PAID' ? 'PAID' : ss.label.replace('✓ ','')}</span>
+              <table style={{width:'100%', fontSize:'10px', borderCollapse:'collapse'}}>
+                <tbody>
+                  {[
+                    ['Invoice #', inv.id ? `INV-${inv.id.substring(0,8).toUpperCase()}` : 'â€”'],
+                    ['Issue Date', fmtDate(inv.invoiceDate)],
+                    ['Due Date',   fmtDate(inv.dueDate)],
+                    ...(inv.approvedByName ? [['Approved By', inv.approvedByName]] : []),
+                  ].map(([label, val], i) => (
+                    <tr key={i} style={{borderBottom:'1px solid #f1f5f9'}}>
+                      <td style={{padding:'4px 0', color:'#94a3b8', fontWeight:'600'}}>{label}</td>
+                      <td style={{padding:'4px 0', textAlign:'right', color:'#1e293b', fontWeight:'600', fontFamily:'monospace'}}>{val}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* â”€â”€ SECTION 3: Line Items Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        <div style={{border:'1px solid #fee2d0', borderRadius:'12px', overflow:'hidden', marginBottom:'24px'}}>
+          <table style={{width:'100%', borderCollapse:'collapse', fontSize:'12px'}}>
+            <thead>
+              <tr style={{background:'linear-gradient(90deg, #fff3ee 0%, #fff8f5 100%)'}}>
+                <th style={{textAlign:'left', padding:'11px 18px', fontSize:'10px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'1.5px', color:'#ff4500', width:'40%'}}>Description</th>
+                <th style={{textAlign:'center', padding:'11px 12px', fontSize:'10px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'1.5px', color:'#c2410c'}}>Provider</th>
+                <th style={{textAlign:'right', padding:'11px 12px', fontSize:'10px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'1.5px', color:'#c2410c'}}>Qty / Hrs</th>
+                <th style={{textAlign:'right', padding:'11px 12px', fontSize:'10px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'1.5px', color:'#c2410c'}}>Rate</th>
+                <th style={{textAlign:'right', padding:'11px 18px', fontSize:'10px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'1.5px', color:'#ff4500'}}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(inv.lineItems ?? []).length === 0 ? (
+                <tr><td colSpan={5} style={{padding:'32px', textAlign:'center', color:'#94a3b8'}}>No line items found.</td></tr>
+              ) : (inv.lineItems ?? []).map((item, i) => (
+                <tr key={i} className="invoice-row" style={{borderTop:'1px solid #fff0eb', background: i % 2 === 0 ? 'white' : '#fffcfb'}}>
+                  <td style={{padding:'13px 18px'}}>
+                    <p style={{fontWeight:'600', color:'#1e293b', marginBottom:'2px'}}>
+                      {item.equipmentName || item.description || 'Equipment Usage'}
+                    </p>
+                    {item.bookingStartTime && item.bookingEndTime && (
+                      <p style={{fontSize:'10px', color:'#94a3b8'}}>
+                        {new Date(item.bookingStartTime).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})}
+                        {' '}–{' '}
+                        {new Date(item.bookingEndTime).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})}
+                      </p>
+                    )}
+                    {item.referenceId && (
+                      <p style={{fontSize:'9px', color:'#cbd5e1', fontFamily:'monospace', marginTop:'1px'}}>Ref: {item.referenceId}</p>
+                    )}
+                  </td>
+                  <td style={{padding:'13px 12px', textAlign:'center', color:'#64748b', fontSize:'11px'}}>
+                    {item.equipmentInstituteName ?? 'â€”'}
+                  </td>
+                  <td style={{padding:'13px 12px', textAlign:'right', fontFamily:'monospace', color:'#334155'}}>
+                    {parseFloat(item.quantity ?? 1).toFixed(1)}
+                  </td>
+                  <td style={{padding:'13px 12px', textAlign:'right', fontFamily:'monospace', color:'#334155'}}>
+                    {fmt(item.unitPrice)}
+                  </td>
+                  <td style={{padding:'13px 18px', textAlign:'right', fontFamily:'monospace', fontWeight:'700', color:'#1e293b'}}>
+                    {fmt(item.lineTotal)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* â”€â”€ SECTION 4: Financial Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        <div style={{display:'flex', justifyContent:'flex-end', marginBottom:'24px'}}>
+          <div style={{width:'300px'}}>
+            <div style={{display:'flex', justifyContent:'space-between', padding:'7px 0', fontSize:'13px', color:'#64748b', borderBottom:'1px solid #f1f5f9'}}>
+              <span>Subtotal</span>
+              <span style={{fontFamily:'monospace', fontWeight:'500'}}>{fmt(subtotal)}</span>
+            </div>
+            <div style={{display:'flex', justifyContent:'space-between', padding:'7px 0', fontSize:'13px', color:'#64748b', borderBottom:'1px solid #f1f5f9'}}>
+              <span>{taxAmount > 0 ? `Overhead (${overheadPct}%)` : 'Tax / Overhead'}</span>
+              <span style={{fontFamily:'monospace', fontWeight:'500'}}>{fmt(taxAmount)}</span>
+            </div>
+            {/* Grand Total highlight strip */}
+            <div style={{
+              marginTop:'10px', borderRadius:'10px', padding:'14px 18px',
+              background:'linear-gradient(135deg, #ff4500 0%, #ff6a33 100%)',
+              display:'flex', justifyContent:'space-between', alignItems:'center'
+            }}>
+              <span style={{fontWeight:'700', color:'white', fontSize:'14px'}}>Grand Total</span>
+              <span style={{fontFamily:'monospace', fontWeight:'900', color:'white', fontSize:'22px'}}>{fmt(grandTotal)}</span>
+            </div>
+            {/* Status tag below total */}
+            {inv.status === 'PAID' && (
+              <div style={{marginTop:'8px', textAlign:'center', padding:'6px', borderRadius:'8px', background:'#ecfdf5', border:'1px solid #6ee7b7'}}>
+                <span style={{color:'#047857', fontWeight:'700', fontSize:'12px', letterSpacing:'0.5px'}}>Paid in Full</span>
+              </div>
+            )}
+            {(inv.status === 'ISSUED' || inv.status === 'PENDING_APPROVAL') && (
+              <div style={{marginTop:'8px', textAlign:'center', padding:'6px', borderRadius:'8px', background:'#fffbeb', border:'1px solid #fcd34d'}}>
+                <span style={{color:'#92400e', fontWeight:'600', fontSize:'11px'}}>Payment due within Net 30 days</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* -- SECTION 5: Notes -- */}
+        {inv.notes && (
+          <div style={{marginBottom:'20px', padding:'12px 16px', borderRadius:'10px', background:'#fff8f6', border:'1px solid #ffe4d9'}}>
+            <p style={{fontSize:'9px', fontWeight:'700', color:'#ff4500', textTransform:'uppercase', letterSpacing:'1.5px', marginBottom:'4px'}}>Notes</p>
+            <p style={{fontSize:'12px', color:'#475569'}}>{inv.notes}</p>
+          </div>
+        )}
+
+        {/* -- SECTION 6: Auth Seal + Footer -- */}
+        <div style={{borderTop:'2px solid #fff0eb', paddingTop:'18px', marginTop:'4px'}}>
+
+          {/* Digital auth banner */}
+          <div style={{
+            display:'flex', alignItems:'flex-start', gap:'12px', padding:'12px 16px',
+            borderRadius:'10px', background:'#f8fafc', border:'1px solid #e2e8f0', marginBottom:'16px'
+          }}>
+            <div style={{
+              width:'36px', height:'36px', borderRadius:'50%', flexShrink:0,
+              background:'#ecfdf5', border:'2px solid #6ee7b7', display:'flex', alignItems:'center', justifyContent:'center'
+            }}>
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#047857" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.955 11.955 0 01.458 10c.595 4.624 3.487 8.527 7.542 10 4.055-1.473 6.947-5.376 7.542-10A11.955 11.955 0 0118.402 6a11.959 11.959 0 01-2.29-3.286M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <div style={{flex:1}}>
+              <p style={{fontSize:'10px', fontWeight:'700', color:'#047857', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'3px'}}>
+                Auto-Generated &amp; Digitally Authenticated
+              </p>
+              <p style={{fontSize:'9px', color:'#64748b', lineHeight:'1.5'}}>
+                System-generated by <strong>LabResource CEBS</strong>. Legally valid under the Information Technology Act, 2000 (India). No manual signature required.
+              </p>
+              <div style={{marginTop:'5px', display:'flex', flexWrap:'wrap', gap:'0 16px', fontSize:'8px', fontFamily:'monospace', color:'#94a3b8'}}>
+                <span><span style={{color:'#64748b', fontWeight:'600'}}>DOC-ID:</span> {inv.id ? inv.id.toUpperCase() : 'N/A'}</span>
+                <span><span style={{color:'#64748b', fontWeight:'600'}}>GEN-AT:</span> {new Date().toISOString().replace('T',' ').substring(0,19)} UTC</span>
+                <span><span style={{color:'#64748b', fontWeight:'600'}}>SYS:</span> LRCEBS-v2.0</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment terms + contact */}
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'24px', fontSize:'10px', color:'#94a3b8'}}>
+            <div>
+              <p style={{fontWeight:'700', color:'#64748b', marginBottom:'3px'}}>Payment Terms</p>
+              <p>Net 30 days from issue date. Late payments attract interest at 1.5% / month.</p>
+              <p style={{marginTop:'3px'}}>
+                Quote Invoice{' '}
+                <span style={{fontFamily:'monospace', fontWeight:'700', color:'#ff4500'}}>
+                  {inv.id ? `INV-${inv.id.substring(0,8).toUpperCase()}` : ''}
+                </span>{' '}
+                in all remittances.
+              </p>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <p style={{fontWeight:'700', color:'#64748b', marginBottom:'3px'}}>
+                LabResource - {v.legalEntity ?? 'SBM TechServices Pvt. Ltd.'}
+              </p>
+              <p>{v.email ?? 'billing@labresource.edu'} . {v.phone ?? '+91-120-4567-890'}</p>
+              <p>{v.website ?? 'www.labresource.edu'}</p>
+              <p style={{marginTop:'4px', fontSize:'8px', color:'#cbd5e1'}}>
+                Auto-generated - {new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

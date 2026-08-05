@@ -296,22 +296,55 @@ public class BillingService {
                 ? invoice.getApprovedBy().getFirstName() + " " + invoice.getApprovedBy().getLastName()
                 : null;
 
+        // ── Financial breakdown with BigDecimal precision ───────────────────────
+        // Subtotal = raw sum of all line items
+        BigDecimal subtotal = invoice.getTotalAmount() != null ? invoice.getTotalAmount() : BigDecimal.ZERO;
+
+        // If overheadRate > 0 and total was already adjusted upward during approval,
+        // back-calculate: subtotal = total / (1 + overheadRate)
+        BigDecimal overheadRate = invoice.getOverheadRate() != null ? invoice.getOverheadRate() : BigDecimal.ZERO;
+        BigDecimal taxAmt = BigDecimal.ZERO;
+        if (overheadRate.compareTo(BigDecimal.ZERO) > 0) {
+            // subtotal_before_overhead = total / (1 + rate)
+            BigDecimal divisor = BigDecimal.ONE.add(overheadRate);
+            subtotal = invoice.getTotalAmount().divide(divisor, 2, java.math.RoundingMode.HALF_UP);
+            taxAmt = invoice.getTotalAmount().subtract(subtotal);
+        }
+
+        // ── Static LabResource Vendor Profile (Remit-To block) ─────────────────
+        InvoiceResponse.VendorProfile vendor = InvoiceResponse.VendorProfile.builder()
+                .platformName("LabResource")
+                .legalEntity("SBM TechServices Pvt. Ltd.")
+                .addressLine1("Block A, Research Park, Sector 125")
+                .addressLine2("Noida, Uttar Pradesh – 201303, India")
+                .email("billing@sbmtechservice.in")
+                .phone("+91-9572442110")
+                .taxId("GSTIN: 09AABCS1234Q1ZX")
+                .website("www.sbmtechservice.in")
+                .build();
+
         return InvoiceResponse.builder()
                 .id(invoice.getId())
                 .billedToInstitutionName(invoice.getBilledToInstitution() != null ? invoice.getBilledToInstitution().getName() : null)
                 .billedToDepartmentName(invoice.getBilledToDepartment() != null ? invoice.getBilledToDepartment().getName() : null)
+                .billingPeriodStart(invoice.getBillingPeriodStart())
+                .billingPeriodEnd(invoice.getBillingPeriodEnd())
                 .invoiceDate(invoice.getInvoiceDate())
                 .dueDate(invoice.getDueDate())
+                .subtotalAmount(subtotal)
+                .taxAmount(taxAmt)
                 .totalAmount(invoice.getTotalAmount())
+                .overheadRate(overheadRate)
                 .status(invoice.getStatus())
-                .overheadRate(invoice.getOverheadRate())
                 .approvedByName(approvedByName)
                 .approvedAt(invoice.getApprovedAt())
                 .notes(invoice.getNotes())
+                .vendor(vendor)
                 .lineItems(itemResponses)
                 .transactions(transactionResponses)
                 .build();
     }
+
 
     // ── Approval Workflow ─────────────────────────────────────────────────────
 
@@ -472,4 +505,4 @@ public class BillingService {
     public List<in.sbmtechservice.Lab_Resource_Utilization.cost_billing.entity.FundingSource> getAllFundingSources() {
         return fundingSourceRepository.findAll();
     }
-}
+}

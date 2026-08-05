@@ -19,9 +19,16 @@ public class InvoiceResponse {
     private UUID id;
     private String billedToInstitutionName;
     private String billedToDepartmentName;
+
+    // Billing period (for invoice description)
+    private LocalDate billingPeriodStart;
+    private LocalDate billingPeriodEnd;
+
     private LocalDate invoiceDate;
     private LocalDate dueDate;
-    private BigDecimal totalAmount;
+    private BigDecimal subtotalAmount;   // sum of line items before overhead
+    private BigDecimal taxAmount;        // computed: subtotal × overheadRate
+    private BigDecimal totalAmount;      // grand total including overhead
     private BigDecimal overheadRate;
     private InvoiceStatus status;
     private String approvedByName;
@@ -29,6 +36,25 @@ public class InvoiceResponse {
     private String notes;
     private List<LineItemResponse> lineItems;
     private List<TransactionResponse> transactions;
+
+    /**
+     * Static vendor/platform identity block for the "Remit To" section.
+     * Populated server-side so the frontend never needs to hard-code it.
+     */
+    private VendorProfile vendor;
+
+    @Data
+    @Builder
+    public static class VendorProfile {
+        private String platformName;       // "LabResource"
+        private String legalEntity;        // "SBM TechServices Pvt. Ltd."
+        private String addressLine1;       // "Block A, Research Park"
+        private String addressLine2;       // "New Delhi – 110001, India"
+        private String email;              // "billing@labresource.edu"
+        private String phone;              // "+91-11-2345-6789"
+        private String taxId;             // "GSTIN: 07AABCS1234Q1ZX"
+        private String website;            // "www.labresource.edu"
+    }
 
 
     @Data

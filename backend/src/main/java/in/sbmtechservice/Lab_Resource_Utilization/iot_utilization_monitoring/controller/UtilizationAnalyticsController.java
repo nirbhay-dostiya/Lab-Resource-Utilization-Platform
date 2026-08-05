@@ -6,6 +6,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.iot_utilization_monitoring.ser
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -57,5 +58,20 @@ public class UtilizationAnalyticsController {
         List<DailyUtilizationMetric> data = metricRepository
                 .findByEquipmentIdAndRecordDateBetweenOrderByRecordDateAsc(equipmentId, startDate, endDate);
         return ResponseEntity.ok(data);
+    }
+
+    /**
+     * Admin-only endpoint to manually trigger a recalculation of utilization metrics
+     * for the last N days. Use this after adding equipment or confirming bookings
+     * without waiting for the nightly cron job.
+     *
+     * Example: POST /api/v1/utilization-analytics/recalculate?daysBack=7
+     */
+    @PostMapping("/recalculate")
+    @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
+    public ResponseEntity<String> triggerRecalculation(
+            @RequestParam(defaultValue = "7") int daysBack) {
+        utilizationAnalyticsService.recalculateRange(daysBack);
+        return ResponseEntity.ok("Recalculation complete for last " + daysBack + " days.");
     }
 }
