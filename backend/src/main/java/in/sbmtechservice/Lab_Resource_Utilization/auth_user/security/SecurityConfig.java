@@ -1,5 +1,6 @@
 package in.sbmtechservice.Lab_Resource_Utilization.auth_user.security;
 
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,10 +37,21 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        // ── Permit ASYNC and ERROR re-dispatches unconditionally. ──────────────
+                        // SSE (Server-Sent Events) works by Tomcat re-dispatching the response
+                        // thread via DispatcherType.ASYNC to write heartbeat/data frames.
+                        // The SecurityContext is NOT propagated to these async threads, so
+                        // Spring Security sees an anonymous user and throws AccessDeniedException
+                        // on a response that is already committed → "response already committed".
+                        // Auth was already validated on the initial REQUEST dispatch below.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
+                        // ── Normal HTTP request rules ─────────────────────────────────────────
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/public/**", "/api/institutions/public").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // SSE stream endpoint — userId is in the path, JWT validated on initial REQUEST
+                        .requestMatchers("/api/notifications/stream/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
