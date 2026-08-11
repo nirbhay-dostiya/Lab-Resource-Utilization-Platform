@@ -24,6 +24,7 @@ import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.Notificatio
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationReferenceType;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.enums.NotificationStatus;
 import in.sbmtechservice.Lab_Resource_Utilization.notification.repository.NotificationRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.service.NotificationDispatcher;
 import in.sbmtechservice.Lab_Resource_Utilization.cost_billing.repository.FundingSourceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -48,6 +49,7 @@ public class BillingService {
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final NotificationDispatcher notificationDispatcher;
     private final FundingSourceRepository fundingSourceRepository;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -157,48 +159,59 @@ public class BillingService {
                                 booking.setStatus(BookingStatus.PENDING);
                                 bookingRepository.save(booking);
                             }
-                            Notification notif = Notification.builder()
-                                    .user(booking.getUser())
-                                    .referenceType(NotificationReferenceType.BOOKING)
-                                    .referenceId(booking.getId())
-                                    .channel(NotificationChannel.IN_APP)
-                                    .content("Your purchase is confirmed. Payment of ₹" + request.getAmount() + " for invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + " has been successfully processed for " + booking.getEquipment().getName() + ". Thank you for booking with LabResource.")
-                                    .status(NotificationStatus.SENT)
-                                    .isRead(false)
-                                    .build();
-                            notificationRepository.save(notif);
+                            
+                            // 1. Notify Buyer
+                            String buyerContent = "Your purchase is confirmed. Payment of ₹" + request.getAmount() + 
+                                                  " for invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + 
+                                                  " has been successfully processed for " + booking.getEquipment().getName() + ". Thank you for booking with LabResource.";
+                            notificationDispatcher.sendWithActor(
+                                    booking.getUser().getId(),
+                                    NotificationReferenceType.BOOKING,
+                                    booking.getId(),
+                                    buyerContent,
+                                    booking.getUser().getId(),
+                                    "System",
+                                    "PAYMENT_CONFIRMED"
+                            );
 
-                            // Notify Seller (Owner Institution Admins)
+                            // 2. Notify Seller (Owner Institution Admins)
                             UUID ownerInstId = booking.getEquipment().getDepartment().getInstitution().getId();
                             java.util.List<in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User> instUsers = userRepository.findAllByInstitutionId(ownerInstId);
+                            String sellerContent = "Equipment '" + booking.getEquipment().getName() + "' has been booked by " + 
+                                                   booking.getUser().getFirstName() + " " + booking.getUser().getLastName() + 
+                                                   ". Payment of ₹" + request.getAmount() + " for invoice #" + 
+                                                   invoice.getId().toString().substring(0,8).toUpperCase() + 
+                                                   " has been received. Please approve this purchase.";
+                            
                             for (in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User u : instUsers) {
                                 if (u.getRoles().stream().anyMatch(r -> r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.INSTITUTION_ADMIN || r.getName() == in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.DEPT_HEAD)) {
-                                    Notification sellerNotif = Notification.builder()
-                                            .user(u)
-                                            .referenceType(NotificationReferenceType.BOOKING_APPROVAL_REQUEST)
-                                            .referenceId(booking.getId())
-                                            .channel(NotificationChannel.IN_APP)
-                                            .content("Equipment '" + booking.getEquipment().getName() + "' has been booked by " + booking.getUser().getFirstName() + " " + booking.getUser().getLastName() + ". Payment of ₹" + request.getAmount() + " for invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + " has been received. Please approve this purchase.")
-                                            .status(NotificationStatus.SENT)
-                                            .isRead(false)
-                                            .build();
-                                    notificationRepository.save(sellerNotif);
+                                    notificationDispatcher.sendWithActor(
+                                            u.getId(),
+                                            NotificationReferenceType.BOOKING_APPROVAL_REQUEST,
+                                            booking.getId(),
+                                            sellerContent,
+                                            booking.getUser().getId(),
+                                            booking.getUser().getFirstName() + " " + booking.getUser().getLastName(),
+                                            "PAYMENT_RECEIVED"
+                                    );
                                 }
                             }
                             
-                            // Notify System Admins for conflict resolution & monitoring
+                            // 3. Notify System Admins for conflict resolution & monitoring
                             java.util.List<in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User> sysAdmins = userRepository.findAllByRoleName(in.sbmtechservice.Lab_Resource_Utilization.auth_user.enums.RoleType.SYSTEM_ADMIN);
+                            String adminContent = "SYSTEM ALERT: Invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + 
+                                                  " paid. Amount: ₹" + request.getAmount() + ". Booking: " + booking.getEquipment().getName();
+                                                  
                             for (in.sbmtechservice.Lab_Resource_Utilization.auth_user.entity.User admin : sysAdmins) {
-                                Notification adminNotif = Notification.builder()
-                                        .user(admin)
-                                        .referenceType(NotificationReferenceType.BOOKING)
-                                        .referenceId(booking.getId())
-                                        .channel(NotificationChannel.IN_APP)
-                                        .content("SYSTEM ALERT: Invoice #" + invoice.getId().toString().substring(0,8).toUpperCase() + " paid. Amount: ₹" + request.getAmount() + ". Booking: " + booking.getEquipment().getName())
-                                        .status(NotificationStatus.SENT)
-                                        .isRead(false)
-                                        .build();
-                                notificationRepository.save(adminNotif);
+                                notificationDispatcher.sendWithActor(
+                                        admin.getId(),
+                                        NotificationReferenceType.BOOKING,
+                                        booking.getId(),
+                                        adminContent,
+                                        booking.getUser().getId(),
+                                        "System",
+                                        "PAYMENT_MONITORING"
+                                );
                             }
                         });
                     });

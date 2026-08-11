@@ -175,6 +175,23 @@ public class MaintenanceTaskService {
 
         MaintenanceTask saved = maintenanceTaskRepository.save(task);
         log.info("[WORK-ORDER] Transitioned {} from {} → {} by user {}", taskId, previous, targetStatus, performingUserId);
+
+        // Fire WorkOrderStatusChangedEvent for every transition
+        // Audience: assigned technician (if any) + Dept Heads + Inst Admins (institution-scoped)
+        User performingUser = performingUserId != null
+                ? userRepository.findById(performingUserId).orElse(null)
+                : null;
+        String changedByName = performingUser != null
+                ? performingUser.getFirstName() + " " + performingUser.getLastName()
+                : "System";
+        UUID institutionIdForEvent = task.getEquipment().getDepartment().getInstitution().getId();
+        UUID technicianId = task.getTechnician() != null ? task.getTechnician().getId() : null;
+        eventPublisher.publishEvent(new NotificationEvents.WorkOrderStatusChangedEvent(
+                institutionIdForEvent, technicianId, taskId,
+                task.getEquipment().getName(), targetStatus.name(),
+                performingUserId, changedByName
+        ));
+
         return mapToResponse(saved);
     }
 

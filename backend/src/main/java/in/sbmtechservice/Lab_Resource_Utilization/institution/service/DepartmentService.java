@@ -8,7 +8,9 @@ import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.DepartmentRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.InstitutionRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ public class DepartmentService {
     private final DepartmentRepository departmentRepository;
     private final InstitutionRepository institutionRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public DepartmentResponse createDepartment(DepartmentRequest request, String userEmail) {
@@ -49,6 +52,14 @@ public class DepartmentService {
                 .build();
 
         Department saved = departmentRepository.save(department);
+
+        // Notify institution admins + dept heads of the same institution (creator gets self-confirm)
+        UUID institutionId = institution.getId();
+        String creatorName = user.getFirstName() + " " + user.getLastName();
+        eventPublisher.publishEvent(new NotificationEvents.DepartmentCreatedEvent(
+                institutionId, saved.getId(), saved.getName(), user.getId(), creatorName
+        ));
+
         return mapToResponse(saved);
     }
 
@@ -79,6 +90,14 @@ public class DepartmentService {
         department.setDescription(request.getDescription());
 
         Department saved = departmentRepository.save(department);
+
+        // Notify institution admins + dept heads of the same institution
+        UUID institutionId = department.getInstitution().getId();
+        String updaterName = user.getFirstName() + " " + user.getLastName();
+        eventPublisher.publishEvent(new NotificationEvents.DepartmentUpdatedEvent(
+                institutionId, saved.getId(), saved.getName(), user.getId(), updaterName
+        ));
+
         return mapToResponse(saved);
     }
 

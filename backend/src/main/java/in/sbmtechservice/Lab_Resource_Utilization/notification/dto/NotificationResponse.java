@@ -25,4 +25,9 @@ public class NotificationResponse {
     // adding title and message for the frontend
     private String title;
     private String message;
+    
+    // Enterprise Audit / Activity Tracking Fields
+    private UUID actorId;
+    private String actorName;
+    private String action;
 }

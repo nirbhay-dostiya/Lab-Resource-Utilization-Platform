@@ -7,14 +7,15 @@ import in.sbmtechservice.Lab_Resource_Utilization.institution.dto.InstitutionReq
 import in.sbmtechservice.Lab_Resource_Utilization.institution.dto.InstitutionResponse;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.InstitutionRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,6 +24,7 @@ public class InstitutionService {
 
     private final InstitutionRepository institutionRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public InstitutionResponse createInstitution(InstitutionRequest request) {
@@ -57,7 +59,7 @@ public class InstitutionService {
     public InstitutionResponse verifyInstitution(UUID id) {
         Institution institution = institutionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Institution not found"));
-        
+
         institution.setIsActive(true);
         institutionRepository.save(institution);
 
@@ -72,6 +74,11 @@ public class InstitutionService {
             userRepository.save(u);
         }
 
+        // Notify institution admins + system admins that this institution is now approved
+        eventPublisher.publishEvent(new NotificationEvents.InstitutionApprovedEvent(
+                institution.getId(), institution.getName()
+        ));
+
         return mapToResponse(institution);
     }
 
@@ -79,7 +86,7 @@ public class InstitutionService {
     public InstitutionResponse suspendInstitution(UUID id) {
         Institution institution = institutionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Institution not found"));
-        
+
         institution.setIsActive(false);
         institutionRepository.save(institution);
 
@@ -93,6 +100,11 @@ public class InstitutionService {
             u.setIsActive(false);
             userRepository.save(u);
         }
+
+        // Notify institution admins + system admins that this institution has been suspended
+        eventPublisher.publishEvent(new NotificationEvents.InstitutionSuspendedEvent(
+                institution.getId(), institution.getName()
+        ));
 
         return mapToResponse(institution);
     }

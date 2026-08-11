@@ -10,7 +10,9 @@ import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Institution
 import in.sbmtechservice.Lab_Resource_Utilization.institution.repository.DepartmentRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.institution.entity.Department;
 import in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.AdminCreateUserRequest;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,6 +28,7 @@ public class UserService {
     private final InstitutionRepository institutionRepository;
     private final DepartmentRepository departmentRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public String assignRoleToUser(String adminEmail, UUID userId, RoleType roleType, UUID institutionId) {
@@ -36,13 +39,12 @@ public class UserService {
         boolean isInstAdmin = adminUser.getRoles().stream().anyMatch(r -> r.getName() == RoleType.INSTITUTION_ADMIN);
         if (!isSystemAdmin && !isInstAdmin) throw new SecurityException("Unauthorized");
 
-        // 1. Find the User
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
         if (!isSystemAdmin && isInstAdmin) {
-            UUID adminInstId = adminUser.getInstitution() != null ? adminUser.getInstitution().getId() : (adminUser.getDepartment() != null && adminUser.getDepartment().getInstitution() != null ? adminUser.getDepartment().getInstitution().getId() : null);
-            UUID targetInstId = user.getInstitution() != null ? user.getInstitution().getId() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getId() : null);
+            UUID adminInstId = resolveInstitutionId(adminUser);
+            UUID targetInstId = resolveInstitutionId(user);
             if (adminInstId == null || !adminInstId.equals(targetInstId)) {
                 throw new SecurityException("You can only assign roles to users in your own institution");
             }
@@ -52,11 +54,9 @@ public class UserService {
             throw new SecurityException("Cannot assign SYSTEM_ADMIN role to existing or new users");
         }
 
-        // 2. Find the Role
         Role role = roleRepository.findByName(roleType)
                 .orElseThrow(() -> new IllegalArgumentException("Role not found in database: " + roleType));
 
-        // 3. Add the role to the user (Because it is a Set, duplicates are automatically ignored)
         user.getRoles().add(role);
 
         if (institutionId != null) {
@@ -65,8 +65,15 @@ public class UserService {
             user.setInstitution(inst);
         }
 
-        // 4. Save the user
         userRepository.save(user);
+
+        // Notify the affected user + institution admins about role assignment
+        UUID targetInstId = institutionId != null ? institutionId : resolveInstitutionId(user);
+        String adminName = adminUser.getFirstName() + " " + adminUser.getLastName();
+        String userName = user.getFirstName() + " " + user.getLastName();
+        eventPublisher.publishEvent(new NotificationEvents.UserRoleAssignedEvent(
+                targetInstId, user.getId(), userName, roleType.name(), adminUser.getId(), adminName
+        ));
 
         return "Successfully assigned " + roleType.name() + " role to user: " + user.getEmail();
     }
@@ -80,29 +87,24 @@ public class UserService {
         boolean isInstAdmin = adminUser.getRoles().stream().anyMatch(r -> r.getName() == RoleType.INSTITUTION_ADMIN);
         if (!isSystemAdmin && !isInstAdmin) throw new SecurityException("Unauthorized");
 
-        // 1. Find the User
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
         if (!isSystemAdmin && isInstAdmin) {
-            UUID adminInstId = adminUser.getInstitution() != null ? adminUser.getInstitution().getId() : (adminUser.getDepartment() != null && adminUser.getDepartment().getInstitution() != null ? adminUser.getDepartment().getInstitution().getId() : null);
-            UUID targetInstId = user.getInstitution() != null ? user.getInstitution().getId() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getId() : null);
+            UUID adminInstId = resolveInstitutionId(adminUser);
+            UUID targetInstId = resolveInstitutionId(user);
             if (adminInstId == null || !adminInstId.equals(targetInstId)) {
                 throw new SecurityException("You can only remove roles from users in your own institution");
             }
         }
 
-        // 2. Find the Role
         Role role = roleRepository.findByName(roleType)
                 .orElseThrow(() -> new IllegalArgumentException("Role not found in database: " + roleType));
 
-        // 3. Remove the role
         if (!user.getRoles().contains(role)) {
-             throw new IllegalArgumentException("User does not have the role: " + roleType);
+            throw new IllegalArgumentException("User does not have the role: " + roleType);
         }
         user.getRoles().remove(role);
-
-        // 4. Save the user
         userRepository.save(user);
 
         return "Successfully removed " + roleType.name() + " role from user: " + user.getEmail();
@@ -121,22 +123,31 @@ public class UserService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (!isSystemAdmin && isInstAdmin) {
-            UUID adminInstId = adminUser.getInstitution() != null ? adminUser.getInstitution().getId() : (adminUser.getDepartment() != null && adminUser.getDepartment().getInstitution() != null ? adminUser.getDepartment().getInstitution().getId() : null);
-            UUID targetInstId = user.getInstitution() != null ? user.getInstitution().getId() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getId() : null);
+            UUID adminInstId = resolveInstitutionId(adminUser);
+            UUID targetInstId = resolveInstitutionId(user);
             if (adminInstId == null || !adminInstId.equals(targetInstId)) {
                 throw new SecurityException("You can only change status of users in your own institution");
             }
         }
 
-        user.setIsActive(!user.getIsActive());
+        boolean newStatus = !user.getIsActive();
+        user.setIsActive(newStatus);
         userRepository.save(user);
 
-        return user.getIsActive() ? "User activated successfully." : "User suspended successfully.";
+        // Notify the affected user + institution admins about status change
+        UUID targetInstId = resolveInstitutionId(user);
+        String adminName = adminUser.getFirstName() + " " + adminUser.getLastName();
+        String userName = user.getFirstName() + " " + user.getLastName();
+        eventPublisher.publishEvent(new NotificationEvents.UserStatusToggledEvent(
+                targetInstId, user.getId(), userName, newStatus, adminUser.getId(), adminName
+        ));
+
+        return newStatus ? "User activated successfully." : "User suspended successfully.";
     }
 
-
     @Transactional
-    public String updateUser(String adminEmail, UUID userId, in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.UpdateUserRequest request) {
+    public String updateUser(String adminEmail, UUID userId,
+                             in.sbmtechservice.Lab_Resource_Utilization.auth_user.dto.UpdateUserRequest request) {
         User adminUser = userRepository.findByEmailWithRoles(adminEmail)
                 .orElseThrow(() -> new IllegalArgumentException("Admin user not found"));
 
@@ -152,21 +163,19 @@ public class UserService {
 
         boolean isTargetSystemAdmin = userToUpdate.getRoles().stream().anyMatch(r -> r.getName() == RoleType.SYSTEM_ADMIN);
 
-        // System Admins cannot edit other System Admins
         if (isSystemAdmin && isTargetSystemAdmin) {
             if (!adminEmail.equals(userToUpdate.getEmail())) {
                 throw new SecurityException("You can only edit your own details, not other System Admins.");
             }
         }
 
-        // Institution Admin cannot edit System Admin
         if (!isSystemAdmin && isTargetSystemAdmin) {
             throw new SecurityException("You cannot edit a System Admin.");
         }
 
         if (!isSystemAdmin && isInstAdmin) {
-            UUID adminInstId = adminUser.getInstitution() != null ? adminUser.getInstitution().getId() : (adminUser.getDepartment() != null && adminUser.getDepartment().getInstitution() != null ? adminUser.getDepartment().getInstitution().getId() : null);
-            UUID targetInstId = userToUpdate.getInstitution() != null ? userToUpdate.getInstitution().getId() : (userToUpdate.getDepartment() != null && userToUpdate.getDepartment().getInstitution() != null ? userToUpdate.getDepartment().getInstitution().getId() : null);
+            UUID adminInstId = resolveInstitutionId(adminUser);
+            UUID targetInstId = resolveInstitutionId(userToUpdate);
             if (adminInstId == null || !adminInstId.equals(targetInstId)) {
                 throw new SecurityException("You can only edit users in your own institution");
             }
@@ -174,7 +183,7 @@ public class UserService {
 
         userToUpdate.setFirstName(request.getFirstName());
         userToUpdate.setLastName(request.getLastName());
-        
+
         if (!userToUpdate.getEmail().equals(request.getEmail())) {
             if (userRepository.existsByEmail(request.getEmail())) {
                 throw new IllegalArgumentException("Email is already in use.");
@@ -183,6 +192,15 @@ public class UserService {
         }
 
         userRepository.save(userToUpdate);
+
+        // PROFILE UPDATED — self-only notification.
+        // Constraint: ONLY the user whose profile changed is notified.
+        // No admin, no institution-wide broadcast.
+        String updatedUserName = userToUpdate.getFirstName() + " " + userToUpdate.getLastName();
+        eventPublisher.publishEvent(new NotificationEvents.ProfileUpdatedEvent(
+                userToUpdate.getId(), updatedUserName
+        ));
+
         return "User updated successfully.";
     }
 
@@ -201,12 +219,12 @@ public class UserService {
         if (isSystemAdmin) {
             users = userRepository.findAll();
         } else {
-            UUID instId = adminUser.getInstitution() != null ? adminUser.getInstitution().getId() : (adminUser.getDepartment() != null && adminUser.getDepartment().getInstitution() != null ? adminUser.getDepartment().getInstitution().getId() : null);
+            UUID instId = resolveInstitutionId(adminUser);
             if (instId == null) {
                 users = new java.util.ArrayList<>();
             } else {
                 users = userRepository.findAll().stream().filter(u -> {
-                    UUID uInstId = u.getInstitution() != null ? u.getInstitution().getId() : (u.getDepartment() != null && u.getDepartment().getInstitution() != null ? u.getDepartment().getInstitution().getId() : null);
+                    UUID uInstId = resolveInstitutionId(u);
                     return instId.equals(uInstId);
                 }).toList();
             }
@@ -224,7 +242,7 @@ public class UserService {
                                 .toList())
                         .departmentId(user.getDepartment() != null ? user.getDepartment().getId() : null)
                         .departmentName(user.getDepartment() != null ? user.getDepartment().getName() : null)
-                        .institutionId(user.getInstitution() != null ? user.getInstitution().getId() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getId() : null))
+                        .institutionId(resolveInstitutionId(user))
                         .institutionName(user.getInstitution() != null ? user.getInstitution().getName() : (user.getDepartment() != null && user.getDepartment().getInstitution() != null ? user.getDepartment().getInstitution().getName() : null))
                         .build())
                 .toList();
@@ -268,17 +286,16 @@ public class UserService {
             department = departmentRepository.findById(request.getDepartmentId())
                     .orElseThrow(() -> new IllegalArgumentException("Department not found"));
             institution = department.getInstitution();
-            
-            // Check if INSTITUTION_ADMIN is creating user for their own institution
+
             if (!isSystemAdmin) {
-                UUID adminInstId = adminUser.getInstitution() != null ? adminUser.getInstitution().getId() : (adminUser.getDepartment() != null && adminUser.getDepartment().getInstitution() != null ? adminUser.getDepartment().getInstitution().getId() : null);
+                UUID adminInstId = resolveInstitutionId(adminUser);
                 if (adminInstId == null || !adminInstId.equals(institution.getId())) {
                     throw new IllegalArgumentException("You can only create users for your own institution's departments");
                 }
             }
         } else if (!isSystemAdmin) {
-            // For institution admins, if they don't specify a department, assign the user to their own institution
-            institution = adminUser.getInstitution() != null ? adminUser.getInstitution() : (adminUser.getDepartment() != null ? adminUser.getDepartment().getInstitution() : null);
+            institution = adminUser.getInstitution() != null ? adminUser.getInstitution()
+                    : (adminUser.getDepartment() != null ? adminUser.getDepartment().getInstitution() : null);
         }
 
         if (request.getRoleType() == RoleType.SYSTEM_ADMIN) {
@@ -301,6 +318,32 @@ public class UserService {
         newUser.getRoles().add(assignedRole);
         userRepository.save(newUser);
 
+        // Notify: welcome the new user + notify institution admins
+        UUID institutionId = institution != null ? institution.getId() : null;
+        String adminName = adminUser.getFirstName() + " " + adminUser.getLastName();
+        String newUserName = request.getFirstName() + " " + request.getLastName();
+        eventPublisher.publishEvent(new NotificationEvents.UserCreatedEvent(
+                institutionId, newUser.getId(), newUserName, request.getEmail(),
+                adminUser.getId(), adminName
+        ));
+
         return "User created successfully with role: " + request.getRoleType();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Private helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Resolve the effective institution ID for a user:
+     *  1. Direct institution link
+     *  2. Department → institution link
+     */
+    private UUID resolveInstitutionId(User user) {
+        if (user.getInstitution() != null) return user.getInstitution().getId();
+        if (user.getDepartment() != null && user.getDepartment().getInstitution() != null) {
+            return user.getDepartment().getInstitution().getId();
+        }
+        return null;
     }
 }

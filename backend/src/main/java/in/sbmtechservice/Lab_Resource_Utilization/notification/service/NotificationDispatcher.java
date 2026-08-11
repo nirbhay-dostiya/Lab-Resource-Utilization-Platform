@@ -33,6 +33,13 @@ import java.util.UUID;
  *  3. @Async ensures notification logic does not add latency to the primary request.
  *  4. Every method accepts explicit recipient lists for testability and clarity.
  *
+ * Audience constraint summary:
+ *  - PROFILE events    → only the affected user (self-only, never to others)
+ *  - INSTITUTION events → only Inst Admins of THAT institution + System Admins
+ *  - DEPARTMENT events  → Inst Admins + Dept Heads of THAT institution
+ *  - CATEGORY events    → System Admins only (global entity)
+ *  - REPORT events      → only the requester
+ *
  * To add EMAIL/SMS later: add a new NotificationChannel branch inside sendTo().
  */
 @Slf4j
@@ -53,17 +60,27 @@ public class NotificationDispatcher {
      * Send an IN_APP notification to a single user.
      * Runs in its own transaction so caller's transaction is never affected.
      */
-    @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void send(UUID recipientId,
                      NotificationReferenceType type,
                      UUID referenceId,
                      String content) {
+        sendWithActor(recipientId, type, referenceId, content, null, null, null);
+    }
+
+    @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void sendWithActor(UUID recipientId,
+                              NotificationReferenceType type,
+                              UUID referenceId,
+                              String content,
+                              UUID actorId,
+                              String actorName,
+                              String action) {
         if (recipientId == null) return;
         try {
             User recipient = userRepository.findById(recipientId).orElse(null);
             if (recipient == null) return;
-            
+
             Notification notification = Notification.builder()
                     .user(recipient)
                     .referenceType(type)
@@ -73,6 +90,9 @@ public class NotificationDispatcher {
                     .status(NotificationStatus.SENT)
                     .isRead(false)
                     .sentAt(LocalDateTime.now())
+                    .actorId(actorId)
+                    .actorName(actorName)
+                    .action(action)
                     .build();
             notificationRepository.save(notification);
             sseService.sendNotification(recipientId, mapToResponse(notification));
@@ -85,12 +105,22 @@ public class NotificationDispatcher {
     /**
      * Send to multiple recipients at once (bulk).
      */
-    @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sendToAll(Collection<User> recipients,
                           NotificationReferenceType type,
                           UUID referenceId,
                           String content) {
+        sendToAllWithActor(recipients, type, referenceId, content, null, null, null);
+    }
+
+    @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void sendToAllWithActor(Collection<User> recipients,
+                                   NotificationReferenceType type,
+                                   UUID referenceId,
+                                   String content,
+                                   UUID actorId,
+                                   String actorName,
+                                   String action) {
         if (recipients == null || recipients.isEmpty()) return;
         List<Notification> batch = new ArrayList<>();
         for (User recipient : recipients) {
@@ -104,6 +134,9 @@ public class NotificationDispatcher {
                     .status(NotificationStatus.SENT)
                     .isRead(false)
                     .sentAt(LocalDateTime.now())
+                    .actorId(actorId)
+                    .actorName(actorName)
+                    .action(action)
                     .build());
         }
         if (!batch.isEmpty()) {
@@ -119,40 +152,30 @@ public class NotificationDispatcher {
     //  Role-based recipient helpers
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Collect all system admins (global role, no institution scope).
-     */
+    /** Collect all system admins (global role, no institution scope). */
     public List<User> getSystemAdmins() {
         return userRepository.findAllByRoleName(RoleType.SYSTEM_ADMIN);
     }
 
-    /**
-     * Collect all institution admins for a given institution.
-     */
+    /** Collect all institution admins for a given institution. */
     public List<User> getInstAdmins(UUID institutionId) {
         if (institutionId == null) return List.of();
         return userRepository.findByRoleAndInstitutionId(RoleType.INSTITUTION_ADMIN, institutionId);
     }
 
-    /**
-     * Collect all department heads for a given institution.
-     */
+    /** Collect all department heads for a given institution. */
     public List<User> getDeptHeads(UUID institutionId) {
         if (institutionId == null) return List.of();
         return userRepository.findByRoleAndInstitutionId(RoleType.DEPT_HEAD, institutionId);
     }
 
-    /**
-     * Collect all lab managers for a given institution.
-     */
+    /** Collect all lab managers for a given institution. */
     public List<User> getLabManagers(UUID institutionId) {
         if (institutionId == null) return List.of();
         return userRepository.findByRoleAndInstitutionId(RoleType.LAB_MANAGER, institutionId);
     }
 
-    /**
-     * Collect all department heads for a specific department.
-     */
+    /** Collect all department heads for a specific department. */
     public List<User> getDeptHeadsForDept(UUID departmentId) {
         if (departmentId == null) return List.of();
         return userRepository.findByRoleAndDepartmentId(RoleType.DEPT_HEAD, departmentId);
@@ -163,27 +186,28 @@ public class NotificationDispatcher {
     //  (called from business services — keeps business services clean)
     // ─────────────────────────────────────────────────────────────────────────
 
+    // ── Equipment ─────────────────────────────────────────────────────────────
+
     /**
-     * EQUIPMENT ADDED — Notify Dept Heads + Inst Admins of the institution + System Admins.
+     * EQUIPMENT ADDED — Notify Dept Heads + Inst Admins + System Admins.
+     * Actor (adder) gets a self-confirmation.
      */
     public void notifyEquipmentAdded(UUID institutionId, UUID equipmentId,
                                      String equipmentName, UUID addedById, String addedByName) {
-        
-        // Explicitly notify the user who added it
-        send(addedById, NotificationReferenceType.EQUIPMENT, equipmentId,
-                String.format("You have successfully added equipment '%s'.", equipmentName));
+        sendWithActor(addedById, NotificationReferenceType.EQUIPMENT, equipmentId,
+                String.format("✅ You have successfully added equipment '%s'.", equipmentName),
+                addedById, addedByName, "EQUIPMENT_ADDED");
 
-        String msg = String.format("New equipment '%s' has been added to your institution by %s.",
+        String msg = String.format("🔬 New equipment '%s' has been added to your institution by %s.",
                 equipmentName, addedByName);
         List<User> recipients = new ArrayList<>();
         recipients.addAll(getDeptHeads(institutionId));
         recipients.addAll(getInstAdmins(institutionId));
         recipients.addAll(getSystemAdmins());
-        
-        // Prevent sending the third-person message to the user who added it
         recipients.removeIf(u -> u.getId().equals(addedById));
-        
-        sendToAll(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg);
+
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg,
+                addedById, addedByName, "EQUIPMENT_ADDED");
     }
 
     /**
@@ -191,96 +215,103 @@ public class NotificationDispatcher {
      */
     public void notifyEquipmentUpdated(UUID institutionId, UUID equipmentId,
                                        String equipmentName, String updatedByName) {
-        String msg = String.format("Equipment '%s' details have been updated by %s.",
+        String msg = String.format("✏️ Equipment '%s' details have been updated by %s.",
                 equipmentName, updatedByName);
         List<User> recipients = new ArrayList<>();
         recipients.addAll(getDeptHeads(institutionId));
         recipients.addAll(getInstAdmins(institutionId));
-        sendToAll(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg);
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg,
+                null, updatedByName, "EQUIPMENT_UPDATED");
     }
 
     /**
      * EQUIPMENT STATUS CHANGED — Notify Dept Heads + Inst Admins.
-     * (e.g. AVAILABLE → UNDER_MAINTENANCE)
      */
     public void notifyEquipmentStatusChanged(UUID institutionId, UUID equipmentId,
                                              String equipmentName, String oldStatus,
                                              String newStatus, String changedByName) {
-        String msg = String.format("Equipment '%s' status changed from %s to %s by %s.",
+        String msg = String.format("🔄 Equipment '%s' status changed from %s → %s by %s.",
                 equipmentName, oldStatus, newStatus, changedByName);
         List<User> recipients = new ArrayList<>();
         recipients.addAll(getDeptHeads(institutionId));
         recipients.addAll(getInstAdmins(institutionId));
-        sendToAll(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg);
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.EQUIPMENT, equipmentId, msg,
+                null, changedByName, "STATUS_CHANGED");
     }
 
+    // ── Booking ───────────────────────────────────────────────────────────────
+
     /**
-     * BOOKING CREATED (PENDING) — Notify Lab Managers + Dept Heads + Inst Admin of
-     * the equipment's institution so they can approve.
+     * BOOKING CREATED (PENDING) — Notify Lab Managers + Dept Heads + Inst Admin for approval.
      */
     public void notifyBookingPendingApproval(UUID equipmentInstitutionId, UUID bookingId,
                                              String bookerName, String equipmentName,
                                              String startTime) {
-        String msg = String.format(
-                "New booking request from %s for '%s' starting %s is awaiting approval.",
+        String msg = String.format("⏳ New booking request from %s for '%s' starting %s is awaiting your approval.",
                 bookerName, equipmentName, startTime);
         List<User> recipients = new ArrayList<>();
         recipients.addAll(getLabManagers(equipmentInstitutionId));
         recipients.addAll(getDeptHeads(equipmentInstitutionId));
         recipients.addAll(getInstAdmins(equipmentInstitutionId));
-        sendToAll(deduplicate(recipients), NotificationReferenceType.BOOKING_APPROVAL_REQUEST, bookingId, msg);
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.BOOKING_APPROVAL_REQUEST, bookingId, msg,
+                null, bookerName, "BOOKING_REQUESTED");
     }
 
     /**
-     * BOOKING CREATED (PENDING_PAYMENT) — Notify the booker to pay their invoice.
+     * BOOKING CREATED (PENDING_PAYMENT) — Notify the booker to pay invoice.
      */
     public void notifyBookingInvoiceGenerated(UUID bookerId, UUID bookingId,
                                               String equipmentName, String amount) {
         String msg = String.format(
-                "Your booking for '%s' has been created. Invoice of ₹%s has been generated. Please complete payment.",
+                "📄 Your booking for '%s' has been created. Invoice of ₹%s has been generated. Please complete payment.",
                 equipmentName, amount);
-        send(bookerId, NotificationReferenceType.INVOICE, bookingId, msg);
+        sendWithActor(bookerId, NotificationReferenceType.INVOICE, bookingId, msg,
+                null, null, "INVOICE_GENERATED");
     }
 
     /**
-     * BOOKING CONFIRMED — Notify the booker their booking was approved.
+     * BOOKING CONFIRMED — Notify the booker.
      */
     public void notifyBookingConfirmed(UUID bookerId, UUID bookingId,
                                        String equipmentName, String startTime) {
         String msg = String.format(
-                "Your booking for '%s' on %s has been CONFIRMED. You're all set!",
+                "✅ Your booking for '%s' on %s has been CONFIRMED. You're all set!",
                 equipmentName, startTime);
-        send(bookerId, NotificationReferenceType.BOOKING, bookingId, msg);
+        sendWithActor(bookerId, NotificationReferenceType.BOOKING, bookingId, msg,
+                null, null, "BOOKING_CONFIRMED");
     }
 
     /**
-     * BOOKING CANCELLED — Notify the booker + Dept Heads/Lab Managers of the equipment's institution.
+     * BOOKING CANCELLED — Notify the booker + Dept Heads / Lab Managers of equipment's institution.
      */
     public void notifyBookingCancelled(UUID bookerId, UUID equipmentInstitutionId,
                                        UUID bookingId, String equipmentName,
                                        String cancelledByName) {
-        // Notify the booker
-        send(bookerId, NotificationReferenceType.BOOKING, bookingId,
-                String.format("Your booking for '%s' has been CANCELLED by %s.", equipmentName, cancelledByName));
+        sendWithActor(bookerId, NotificationReferenceType.BOOKING, bookingId,
+                String.format("❌ Your booking for '%s' has been CANCELLED by %s.", equipmentName, cancelledByName),
+                null, cancelledByName, "BOOKING_CANCELLED");
 
-        // Notify institution staff (if cancelled by someone other than the booker)
         List<User> staff = new ArrayList<>();
         staff.addAll(getLabManagers(equipmentInstitutionId));
         staff.addAll(getDeptHeads(equipmentInstitutionId));
-        staff.removeIf(u -> u.getId().equals(bookerId)); // don't double-notify if booker is staff
-        String staffMsg = String.format("Booking for '%s' has been cancelled.", equipmentName);
-        sendToAll(deduplicate(staff), NotificationReferenceType.BOOKING, bookingId, staffMsg);
+        staff.removeIf(u -> u.getId().equals(bookerId));
+        String staffMsg = String.format("❌ Booking for '%s' has been cancelled by %s.", equipmentName, cancelledByName);
+        sendToAllWithActor(deduplicate(staff), NotificationReferenceType.BOOKING, bookingId, staffMsg,
+                null, cancelledByName, "BOOKING_CANCELLED");
     }
 
     /**
-     * BOOKING COMPLETED — Notify the booker their session is complete.
+     * BOOKING COMPLETED — Notify the booker.
      */
     public void notifyBookingCompleted(UUID bookerId, UUID bookingId, String equipmentName) {
         String msg = String.format(
-                "Your booking session for '%s' has been marked as COMPLETED. Thank you!",
+                "✅ Your booking session for '%s' has been marked as COMPLETED. Thank you!",
                 equipmentName);
-        send(bookerId, NotificationReferenceType.BOOKING, bookingId, msg);
+        sendWithActor(bookerId, NotificationReferenceType.BOOKING, bookingId, msg,
+                null, null, "BOOKING_COMPLETED");
     }
+
+    // ── Maintenance & Work Orders ─────────────────────────────────────────────
 
     /**
      * MAINTENANCE SCHEDULED — Notify technician + Dept Heads + Inst Admins.
@@ -288,104 +319,332 @@ public class NotificationDispatcher {
     public void notifyMaintenanceScheduled(UUID technicianId, UUID institutionId,
                                            UUID taskId, String equipmentName,
                                            String scheduledDate) {
-        // Notify the assigned technician
         if (technicianId != null) {
-            send(technicianId, NotificationReferenceType.MAINTENANCE, taskId,
-                    String.format("You have been assigned a maintenance task for '%s' on %s.",
-                            equipmentName, scheduledDate));
+            sendWithActor(technicianId, NotificationReferenceType.MAINTENANCE, taskId,
+                    String.format("🔧 You have been assigned a maintenance task for '%s' on %s.",
+                            equipmentName, scheduledDate),
+                    null, null, "MAINTENANCE_SCHEDULED");
         }
-        // Notify Dept Heads + Inst Admins
         String mgmtMsg = String.format(
-                "Maintenance has been scheduled for '%s' on %s. Equipment is now locked.",
+                "🔧 Maintenance has been scheduled for '%s' on %s. Equipment is now locked.",
                 equipmentName, scheduledDate);
         List<User> mgmt = new ArrayList<>();
         mgmt.addAll(getDeptHeads(institutionId));
         mgmt.addAll(getInstAdmins(institutionId));
-        sendToAll(deduplicate(mgmt), NotificationReferenceType.MAINTENANCE, taskId, mgmtMsg);
+        sendToAllWithActor(deduplicate(mgmt), NotificationReferenceType.MAINTENANCE, taskId, mgmtMsg,
+                null, null, "MAINTENANCE_SCHEDULED");
     }
 
     /**
-     * MAINTENANCE COMPLETED — Notify Dept Heads + Inst Admins that equipment is back online.
+     * MAINTENANCE COMPLETED — Notify Dept Heads + Inst Admins.
      */
     public void notifyMaintenanceCompleted(UUID institutionId, UUID taskId, String equipmentName) {
         String msg = String.format(
-                "Maintenance for '%s' has been COMPLETED. Equipment is now back online and available.",
+                "✅ Maintenance for '%s' has been COMPLETED. Equipment is now back online and available.",
                 equipmentName);
         List<User> mgmt = new ArrayList<>();
         mgmt.addAll(getDeptHeads(institutionId));
         mgmt.addAll(getInstAdmins(institutionId));
-        sendToAll(deduplicate(mgmt), NotificationReferenceType.MAINTENANCE, taskId, msg);
+        sendToAllWithActor(deduplicate(mgmt), NotificationReferenceType.MAINTENANCE, taskId, msg,
+                null, null, "MAINTENANCE_COMPLETED");
     }
+
+    /**
+     * WORK ORDER STATUS CHANGED — Notify technician (if assigned) + Dept Heads + Inst Admins.
+     * Fires on every valid state transition (ASSIGNED, IN_PROGRESS, COMPLETED, VERIFIED, CANCELLED).
+     */
+    public void notifyWorkOrderStatusChanged(UUID institutionId, UUID technicianId,
+                                             UUID workOrderId, String equipmentName,
+                                             String newStatus, UUID changedById, String changedByName) {
+        String techMsg = String.format("🔧 Work order status for '%s' has been changed to %s.",
+                equipmentName, newStatus);
+        if (technicianId != null && !technicianId.equals(changedById)) {
+            sendWithActor(technicianId, NotificationReferenceType.MAINTENANCE, workOrderId,
+                    techMsg, changedById, changedByName, "WORK_ORDER_STATUS_CHANGED");
+        }
+
+        String mgmtMsg = String.format("🔧 Work order for '%s' transitioned to %s by %s.",
+                equipmentName, newStatus, changedByName);
+        List<User> mgmt = new ArrayList<>();
+        mgmt.addAll(getDeptHeads(institutionId));
+        mgmt.addAll(getInstAdmins(institutionId));
+        mgmt.removeIf(u -> u.getId().equals(changedById));
+        sendToAllWithActor(deduplicate(mgmt), NotificationReferenceType.MAINTENANCE, workOrderId,
+                mgmtMsg, changedById, changedByName, "WORK_ORDER_STATUS_CHANGED");
+
+        // Self-confirm to the actor
+        sendWithActor(changedById, NotificationReferenceType.MAINTENANCE, workOrderId,
+                String.format("✅ You changed the work order status for '%s' to %s.", equipmentName, newStatus),
+                changedById, changedByName, "WORK_ORDER_STATUS_CHANGED");
+    }
+
+    // ── Calibration ───────────────────────────────────────────────────────────
+
+    /**
+     * CALIBRATION LOGGED — Notify Lab Managers + Dept Heads of the equipment's institution.
+     * Actor gets a self-confirmation.
+     */
+    public void notifyCalibrationLogged(UUID institutionId, UUID calibrationId,
+                                        String equipmentName, String expiryDate,
+                                        UUID loggedById, String loggedByName) {
+        sendWithActor(loggedById, NotificationReferenceType.CALIBRATION, calibrationId,
+                String.format("✅ You have successfully logged a calibration record for '%s'. Next due: %s.",
+                        equipmentName, expiryDate),
+                loggedById, loggedByName, "CALIBRATION_LOGGED");
+
+        String msg = String.format("📋 Calibration record for '%s' has been logged by %s. Next due: %s.",
+                equipmentName, loggedByName, expiryDate);
+        List<User> recipients = new ArrayList<>();
+        recipients.addAll(getLabManagers(institutionId));
+        recipients.addAll(getDeptHeads(institutionId));
+        recipients.addAll(getInstAdmins(institutionId));
+        recipients.removeIf(u -> u.getId().equals(loggedById));
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.CALIBRATION, calibrationId, msg,
+                loggedById, loggedByName, "CALIBRATION_LOGGED");
+    }
+
+    // ── Institution ───────────────────────────────────────────────────────────
+
+    /**
+     * INSTITUTION APPROVED — Notify Institution Admins of that institution + System Admins.
+     * Audience: strictly scoped to the approved institution's admins; no other institution sees this.
+     */
+    public void notifyInstitutionApproved(UUID institutionId, String institutionName) {
+        String instAdminMsg = String.format(
+                "🎉 Your institution '%s' has been APPROVED! Your account is now fully active.", institutionName);
+        getInstAdmins(institutionId).forEach(u ->
+                sendWithActor(u.getId(), NotificationReferenceType.INSTITUTION, institutionId,
+                        instAdminMsg, null, "System", "INSTITUTION_APPROVED"));
+
+        String sysAdminMsg = String.format("✅ Institution '%s' has been approved and activated.", institutionName);
+        sendToAllWithActor(getSystemAdmins(), NotificationReferenceType.INSTITUTION, institutionId,
+                sysAdminMsg, null, "System", "INSTITUTION_APPROVED");
+    }
+
+    /**
+     * INSTITUTION SUSPENDED — Notify Institution Admins of that institution + System Admins.
+     * Audience: strictly scoped to the suspended institution's admins; no other institution sees this.
+     */
+    public void notifyInstitutionSuspended(UUID institutionId, String institutionName) {
+        String instAdminMsg = String.format(
+                "⚠️ Your institution '%s' has been SUSPENDED. Please contact the system administrator.", institutionName);
+        getInstAdmins(institutionId).forEach(u ->
+                sendWithActor(u.getId(), NotificationReferenceType.INSTITUTION, institutionId,
+                        instAdminMsg, null, "System", "INSTITUTION_SUSPENDED"));
+
+        String sysAdminMsg = String.format("⚠️ Institution '%s' has been suspended.", institutionName);
+        sendToAllWithActor(getSystemAdmins(), NotificationReferenceType.INSTITUTION, institutionId,
+                sysAdminMsg, null, "System", "INSTITUTION_SUSPENDED");
+    }
+
+    // ── Department ────────────────────────────────────────────────────────────
+
+    /**
+     * DEPARTMENT CREATED — Notify Inst Admins + Dept Heads of the same institution.
+     * Creator gets a self-confirmation. Scoped to the institution.
+     */
+    public void notifyDepartmentCreated(UUID institutionId, UUID departmentId,
+                                        String departmentName, UUID createdById, String createdByName) {
+        sendWithActor(createdById, NotificationReferenceType.DEPARTMENT, departmentId,
+                String.format("✅ You have successfully created department '%s'.", departmentName),
+                createdById, createdByName, "DEPARTMENT_CREATED");
+
+        String msg = String.format("🏢 New department '%s' has been created by %s.", departmentName, createdByName);
+        List<User> recipients = new ArrayList<>();
+        recipients.addAll(getInstAdmins(institutionId));
+        recipients.addAll(getDeptHeads(institutionId));
+        recipients.removeIf(u -> u.getId().equals(createdById));
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.DEPARTMENT, departmentId, msg,
+                createdById, createdByName, "DEPARTMENT_CREATED");
+    }
+
+    /**
+     * DEPARTMENT UPDATED — Notify Inst Admins + Dept Heads of the same institution.
+     */
+    public void notifyDepartmentUpdated(UUID institutionId, UUID departmentId,
+                                        String departmentName, UUID updatedById, String updatedByName) {
+        String msg = String.format("✏️ Department '%s' has been updated by %s.", departmentName, updatedByName);
+        List<User> recipients = new ArrayList<>();
+        recipients.addAll(getInstAdmins(institutionId));
+        recipients.addAll(getDeptHeads(institutionId));
+        sendToAllWithActor(deduplicate(recipients), NotificationReferenceType.DEPARTMENT, departmentId, msg,
+                updatedById, updatedByName, "DEPARTMENT_UPDATED");
+    }
+
+    // ── Category ──────────────────────────────────────────────────────────────
+
+    /**
+     * CATEGORY ADDED — Notify System Admins only (categories are global entities).
+     * Actor gets a self-confirmation.
+     */
+    public void notifyCategoryAdded(UUID categoryId, String categoryName,
+                                    UUID addedById, String addedByName) {
+        sendWithActor(addedById, NotificationReferenceType.CATEGORY, categoryId,
+                String.format("✅ You have successfully added equipment category '%s'.", categoryName),
+                addedById, addedByName, "CATEGORY_ADDED");
+
+        String sysMsg = String.format("🏷️ New equipment category '%s' has been added by %s.", categoryName, addedByName);
+        List<User> sysAdmins = getSystemAdmins();
+        sysAdmins.removeIf(u -> u.getId().equals(addedById));
+        sendToAllWithActor(sysAdmins, NotificationReferenceType.CATEGORY, categoryId,
+                sysMsg, addedById, addedByName, "CATEGORY_ADDED");
+    }
+
+    // ── User & Profile ────────────────────────────────────────────────────────
+
+    /**
+     * PROFILE UPDATED — SELF ONLY.
+     * Audience constraint: ONLY the user whose profile was changed receives this.
+     * No admin, no other user, no institution-wide broadcast. Ever.
+     */
+    public void notifyProfileUpdated(UUID userId, String userName) {
+        sendWithActor(userId, NotificationReferenceType.PROFILE, userId,
+                String.format("✅ Your profile has been updated successfully, %s.", userName),
+                userId, userName, "PROFILE_UPDATED");
+    }
+
+    /**
+     * USER CREATED — Notify the new user (welcome) + Institution Admins of their institution.
+     */
+    public void notifyUserCreated(UUID institutionId, UUID newUserId,
+                                  String newUserName, String newUserEmail,
+                                  UUID createdById, String createdByName) {
+        sendWithActor(newUserId, NotificationReferenceType.USER_MANAGEMENT, newUserId,
+                String.format("👋 Welcome, %s! Your account has been created. You can now log in with %s.",
+                        newUserName, newUserEmail),
+                createdById, createdByName, "USER_CREATED");
+
+        String adminMsg = String.format("👤 New user '%s' (%s) has been created by %s.",
+                newUserName, newUserEmail, createdByName);
+        List<User> admins = new ArrayList<>(getInstAdmins(institutionId));
+        admins.addAll(getSystemAdmins());
+        admins.removeIf(u -> u.getId().equals(createdById));
+        sendToAllWithActor(deduplicate(admins), NotificationReferenceType.USER_MANAGEMENT, newUserId,
+                adminMsg, createdById, createdByName, "USER_CREATED");
+    }
+
+    /**
+     * USER STATUS TOGGLED — Notify the affected user + Institution Admins of their institution.
+     */
+    public void notifyUserStatusToggled(UUID institutionId, UUID userId, String userName,
+                                        boolean isNowActive, UUID adminId, String adminName) {
+        String status = isNowActive ? "ACTIVATED ✅" : "SUSPENDED ⚠️";
+        sendWithActor(userId, NotificationReferenceType.USER_MANAGEMENT, userId,
+                String.format("Your account has been %s by %s.", status, adminName),
+                adminId, adminName, isNowActive ? "USER_ACTIVATED" : "USER_SUSPENDED");
+
+        String adminMsg = String.format("👤 User '%s' has been %s by %s.", userName, status, adminName);
+        List<User> admins = new ArrayList<>(getInstAdmins(institutionId));
+        admins.addAll(getSystemAdmins());
+        admins.removeIf(u -> u.getId().equals(adminId));
+        sendToAllWithActor(deduplicate(admins), NotificationReferenceType.USER_MANAGEMENT, userId,
+                adminMsg, adminId, adminName, isNowActive ? "USER_ACTIVATED" : "USER_SUSPENDED");
+    }
+
+    /**
+     * USER ROLE ASSIGNED — Notify the affected user + Institution Admins of their institution.
+     */
+    public void notifyUserRoleAssigned(UUID institutionId, UUID userId, String userName,
+                                       String roleName, UUID adminId, String adminName) {
+        sendWithActor(userId, NotificationReferenceType.USER_MANAGEMENT, userId,
+                String.format("🎖️ The role '%s' has been assigned to your account by %s.", roleName, adminName),
+                adminId, adminName, "ROLE_ASSIGNED");
+
+        String adminMsg = String.format("🎖️ Role '%s' has been assigned to '%s' by %s.", roleName, userName, adminName);
+        List<User> admins = new ArrayList<>(getInstAdmins(institutionId));
+        admins.addAll(getSystemAdmins());
+        admins.removeIf(u -> u.getId().equals(adminId));
+        sendToAllWithActor(deduplicate(admins), NotificationReferenceType.USER_MANAGEMENT, userId,
+                adminMsg, adminId, adminName, "ROLE_ASSIGNED");
+    }
+
+    // ── Reporting ─────────────────────────────────────────────────────────────
+
+    /**
+     * OEE REPORT READY — REQUESTER ONLY.
+     * Audience constraint: Only the user who triggered the report generation is notified.
+     * No broadcast to admins or other users.
+     */
+    public void notifyOeeReportReady(UUID requesterId, UUID reportId, String reportName) {
+        sendWithActor(requesterId, NotificationReferenceType.REPORT, reportId,
+                String.format("📊 Your OEE report '%s' has been generated and is ready to view.", reportName),
+                null, "System", "REPORT_READY");
+    }
+
+    // ── Resource Sharing ──────────────────────────────────────────────────────
 
     /**
      * RESOURCE SHARE LISTED — Notify the person who listed it + Dept Heads + Inst Admins + System Admins.
      */
-    public void notifyResourceShareListed(UUID listingId, String equipmentName, String institutionName, UUID sharedById, UUID institutionId) {
-        // Notify the user who shared it
-        send(sharedById, NotificationReferenceType.SHARING_REQUEST, listingId,
-                String.format("You have successfully listed '%s' for inter-institution sharing.", equipmentName));
+    public void notifyResourceShareListed(UUID listingId, String equipmentName, String institutionName,
+                                          UUID sharedById, UUID institutionId) {
+        sendWithActor(sharedById, NotificationReferenceType.SHARING_REQUEST, listingId,
+                String.format("🔗 You have successfully listed '%s' for inter-institution sharing.", equipmentName),
+                sharedById, null, "SHARE_LISTED");
 
-        // Notify Dept Heads and Inst Admins of the owning institution
-        String staffMsg = String.format("Equipment '%s' has been listed for inter-institution sharing.", equipmentName);
+        String staffMsg = String.format("🔗 Equipment '%s' has been listed for inter-institution sharing.", equipmentName);
         List<User> staff = new ArrayList<>();
         staff.addAll(getDeptHeads(institutionId));
         staff.addAll(getInstAdmins(institutionId));
-        staff.removeIf(u -> u.getId().equals(sharedById)); // Don't double notify the person who shared it
-        sendToAll(deduplicate(staff), NotificationReferenceType.SHARING_REQUEST, listingId, staffMsg);
+        staff.removeIf(u -> u.getId().equals(sharedById));
+        sendToAllWithActor(deduplicate(staff), NotificationReferenceType.SHARING_REQUEST, listingId, staffMsg,
+                sharedById, null, "SHARE_LISTED");
 
-        // Notify System Admins
-        String sysAdminMsg = String.format("'%s' from %s has been listed for inter-institution sharing.", equipmentName, institutionName);
-        sendToAll(getSystemAdmins(), NotificationReferenceType.SHARING_REQUEST, listingId, sysAdminMsg);
+        String sysAdminMsg = String.format("🔗 '%s' from %s has been listed for inter-institution sharing.",
+                equipmentName, institutionName);
+        sendToAllWithActor(getSystemAdmins(), NotificationReferenceType.SHARING_REQUEST, listingId, sysAdminMsg,
+                sharedById, null, "SHARE_LISTED");
     }
 
     /**
-     * ACCESS REQUEST SUBMITTED — Notify Inst Admins, Dept Heads, and Lab Managers of the equipment-owning institution, and the requester.
+     * ACCESS REQUEST SUBMITTED — Notify owning institution's staff + requester.
      */
     public void notifyAccessRequestSubmitted(UUID ownerInstitutionId, UUID requestId,
                                              String requesterName, String equipmentName,
                                              String requesterInstitutionName, UUID requesterId) {
-        // Notify the requester
-        send(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
-                String.format("Your access request for '%s' has been successfully submitted.", equipmentName));
+        sendWithActor(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
+                String.format("✅ Your access request for '%s' has been successfully submitted.", equipmentName),
+                requesterId, requesterName, "ACCESS_REQUESTED");
 
-        // Notify the owning institution's staff
-        String msg = String.format(
-                "%s from %s has requested access to your shared equipment '%s'. Please review.",
+        String msg = String.format("🔑 %s from %s has requested access to your shared equipment '%s'. Please review.",
                 requesterName, requesterInstitutionName, equipmentName);
-        
         List<User> staff = new ArrayList<>();
         staff.addAll(getLabManagers(ownerInstitutionId));
         staff.addAll(getDeptHeads(ownerInstitutionId));
         staff.addAll(getInstAdmins(ownerInstitutionId));
-        staff.removeIf(u -> u.getId().equals(requesterId)); // Don't notify the requester if they are also staff
-        sendToAll(deduplicate(staff), NotificationReferenceType.ACCESS_REQUEST, requestId, msg);
+        staff.removeIf(u -> u.getId().equals(requesterId));
+        sendToAllWithActor(deduplicate(staff), NotificationReferenceType.ACCESS_REQUEST, requestId, msg,
+                requesterId, requesterName, "ACCESS_REQUESTED");
     }
 
     /**
      * ACCESS REQUEST APPROVED — Notify the requester.
      */
     public void notifyAccessRequestApproved(UUID requesterId, UUID requestId, String equipmentName) {
-        send(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
-                String.format("Your access request for '%s' has been APPROVED. You can now book this equipment.",
-                        equipmentName));
+        sendWithActor(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
+                String.format("✅ Your access request for '%s' has been APPROVED. You can now book this equipment.",
+                        equipmentName),
+                null, null, "ACCESS_APPROVED");
     }
 
     /**
      * ACCESS REQUEST REJECTED — Notify the requester.
      */
     public void notifyAccessRequestRejected(UUID requesterId, UUID requestId, String equipmentName) {
-        send(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
-                String.format("Your access request for '%s' has been REJECTED. Contact the institution admin for details.",
-                        equipmentName));
+        sendWithActor(requesterId, NotificationReferenceType.ACCESS_REQUEST, requestId,
+                String.format("❌ Your access request for '%s' has been REJECTED. Contact the institution admin for details.",
+                        equipmentName),
+                null, null, "ACCESS_REJECTED");
     }
 
     /**
-     * WAITLIST FULFILLED — Notify user they got a slot from the waitlist.
+     * WAITLIST FULFILLED — Notify user they got a slot.
      */
     public void notifyWaitlistFulfilled(UUID userId, UUID waitlistId, String equipmentName) {
-        send(userId, NotificationReferenceType.WAITLIST, waitlistId,
-                String.format("A slot for '%s' became available and your waitlist request has been fulfilled! A new booking has been created for you.",
-                        equipmentName));
+        sendWithActor(userId, NotificationReferenceType.WAITLIST, waitlistId,
+                String.format("🎉 A slot for '%s' became available! Your waitlist request has been fulfilled and a new booking created for you.",
+                        equipmentName),
+                null, null, "WAITLIST_FULFILLED");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -424,6 +683,9 @@ public class NotificationDispatcher {
                 .sentAt(notification.getSentAt())
                 .title(notification.getReferenceType().name())
                 .message(notification.getContent())
+                .actorId(notification.getActorId())
+                .actorName(notification.getActorName())
+                .action(notification.getAction())
                 .build();
     }
 }

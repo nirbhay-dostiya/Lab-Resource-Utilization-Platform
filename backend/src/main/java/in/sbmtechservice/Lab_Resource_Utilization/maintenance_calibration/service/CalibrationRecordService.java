@@ -8,7 +8,9 @@ import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.dto.Ca
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.dto.CalibrationRecordResponse;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.entity.CalibrationRecord;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.repository.CalibrationRecordRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ public class CalibrationRecordService {
     private final CalibrationRecordRepository calibrationRepository;
     private final EquipmentRepository equipmentRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public CalibrationRecordResponse logCalibration(CalibrationRecordRequest request) {
@@ -49,6 +52,27 @@ public class CalibrationRecordService {
                 .build();
 
         CalibrationRecord saved = calibrationRepository.save(record);
+
+        // Notify Lab Managers + Dept Heads of the equipment's institution
+        // Actor (loggedBy) gets a self-confirmation
+        UUID institutionId = null;
+        if (equipment.getDepartment() != null && equipment.getDepartment().getInstitution() != null) {
+            institutionId = equipment.getDepartment().getInstitution().getId();
+        }
+
+        UUID loggedById = calibratedBy != null ? calibratedBy.getId() : null;
+        String loggedByName = calibratedBy != null
+                ? calibratedBy.getFirstName() + " " + calibratedBy.getLastName()
+                : (request.getVendorName() != null ? request.getVendorName() : "System");
+        String expiryDateStr = request.getExpiryDate() != null ? request.getExpiryDate().toString() : "N/A";
+
+        if (institutionId != null) {
+            eventPublisher.publishEvent(new NotificationEvents.CalibrationLoggedEvent(
+                    institutionId, saved.getId(), equipment.getId(),
+                    equipment.getName(), expiryDateStr, loggedById, loggedByName
+            ));
+        }
+
         return mapToResponse(saved);
     }
 

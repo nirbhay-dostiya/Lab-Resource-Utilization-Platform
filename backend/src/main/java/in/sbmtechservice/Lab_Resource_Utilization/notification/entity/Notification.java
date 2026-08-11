@@ -15,7 +15,8 @@ import java.util.UUID;
 @Table(
         name = "notifications",
         indexes = {
-                @Index(name = "idx_notif_user_unread", columnList = "user_id, is_read")
+                @Index(name = "idx_notif_recipient_read", columnList = "user_id, is_read"),
+                @Index(name = "idx_notif_reference", columnList = "reference_type, reference_id")
         }
 )
 @Getter
@@ -59,6 +60,17 @@ public class Notification {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private NotificationStatus status;
+
+    // --- Enterprise Audit / Activity Tracking Fields ---
+    @Column(name = "actor_id")
+    private UUID actorId;
+
+    @Column(name = "actor_name", length = 100)
+    private String actorName;
+
+    @Column(name = "action", length = 50)
+    private String action;
+    // ---------------------------------------------------
 
     @Column(name = "is_read", nullable = false)
     @Builder.Default

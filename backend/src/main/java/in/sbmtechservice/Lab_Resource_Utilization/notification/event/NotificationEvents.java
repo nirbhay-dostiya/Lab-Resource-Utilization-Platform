@@ -6,11 +6,11 @@ import java.util.UUID;
  * Domain events for the notification system.
  * Emitted by business services to decouple transaction commits from async notification delivery.
  *
- * New events added for enterprise feature expansion:
- *  - AssetDowntimeEvent       (Module 6 — asset.downtime trigger)
- *  - WorkOrderUrgentEvent     (Module 6 — workorder.urgent trigger)
- *  - BillingFailedEvent       (Module 6 — billing.failed trigger)
- *  - CalibrationReminderEvent (Module 2 + Module 6 — calibration.reminder trigger)
+ * Audience constraint enforced at the Dispatcher level:
+ *  - PROFILE events → only the affected user
+ *  - INSTITUTION/DEPARTMENT events → scoped to that institution only
+ *  - CATEGORY events → System Admins only (global entity)
+ *  - REPORT events → only the requester
  */
 public class NotificationEvents {
 
@@ -117,6 +117,20 @@ public class NotificationEvents {
             String currentStatus
     ) {}
 
+    /**
+     * Fired on every work order state transition.
+     * Notifies: assigned technician + Dept Heads + Inst Admins (all scoped to institution).
+     */
+    public record WorkOrderStatusChangedEvent(
+            UUID institutionId,
+            UUID technicianId,
+            UUID workOrderId,
+            String equipmentName,
+            String newStatus,
+            UUID changedById,
+            String changedByName
+    ) {}
+
     // ── Calibration Events ────────────────────────────────────────────────────
 
     /**
@@ -130,6 +144,21 @@ public class NotificationEvents {
             String equipmentName,
             String expiryDate,
             int daysUntilExpiry
+    ) {}
+
+    /**
+     * Fired when a new calibration record is logged.
+     * Notifies: Lab Managers + Dept Heads of the equipment's institution.
+     * Actor (loggedBy) gets a self-confirmation.
+     */
+    public record CalibrationLoggedEvent(
+            UUID institutionId,
+            UUID calibrationId,
+            UUID equipmentId,
+            String equipmentName,
+            String expiryDate,
+            UUID loggedById,
+            String loggedByName
     ) {}
 
     // ── Billing Events ────────────────────────────────────────────────────────
@@ -182,5 +211,126 @@ public class NotificationEvents {
             UUID requesterId,
             UUID requestId,
             String equipmentName
+    ) {}
+
+    // ── Institution & Organisation Events ─────────────────────────────────────
+
+    /**
+     * Fired when System Admin approves (verifies) an institution.
+     * Notifies: Institution Admins of that institution (they are now activated).
+     */
+    public record InstitutionApprovedEvent(
+            UUID institutionId,
+            String institutionName
+    ) {}
+
+    /**
+     * Fired when System Admin suspends an institution.
+     * Notifies: Institution Admins of that institution (they are now suspended).
+     */
+    public record InstitutionSuspendedEvent(
+            UUID institutionId,
+            String institutionName
+    ) {}
+
+    /**
+     * Fired when a department is created.
+     * Notifies: Institution Admins + Dept Heads of the same institution.
+     * Excludes the creator (they get a self-confirm).
+     */
+    public record DepartmentCreatedEvent(
+            UUID institutionId,
+            UUID departmentId,
+            String departmentName,
+            UUID createdById,
+            String createdByName
+    ) {}
+
+    /**
+     * Fired when a department is updated.
+     * Notifies: Institution Admins + Dept Heads of the same institution.
+     */
+    public record DepartmentUpdatedEvent(
+            UUID institutionId,
+            UUID departmentId,
+            String departmentName,
+            UUID updatedById,
+            String updatedByName
+    ) {}
+
+    /**
+     * Fired when a new equipment category is created.
+     * Notifies: System Admins only (category is a global entity).
+     * Actor gets a self-confirmation.
+     */
+    public record CategoryAddedEvent(
+            UUID categoryId,
+            String categoryName,
+            UUID addedById,
+            String addedByName
+    ) {}
+
+    // ── User & Profile Events ─────────────────────────────────────────────────
+
+    /**
+     * Fired when a user updates their own profile.
+     * Constraint: ONLY the affected user receives this notification.
+     * No admin or other user is ever notified of another person's profile change.
+     */
+    public record ProfileUpdatedEvent(
+            UUID userId,
+            String userName
+    ) {}
+
+    /**
+     * Fired when an admin creates a new user account.
+     * Notifies: The newly created user (welcome notification) +
+     *           Institution Admins of the same institution.
+     */
+    public record UserCreatedEvent(
+            UUID institutionId,
+            UUID newUserId,
+            String newUserName,
+            String newUserEmail,
+            UUID createdById,
+            String createdByName
+    ) {}
+
+    /**
+     * Fired when a user's active/suspended status is toggled.
+     * Notifies: The affected user + Institution Admins of their institution.
+     */
+    public record UserStatusToggledEvent(
+            UUID institutionId,
+            UUID userId,
+            String userName,
+            boolean isNowActive,
+            UUID adminId,
+            String adminName
+    ) {}
+
+    /**
+     * Fired when a role is assigned to a user.
+     * Notifies: The affected user + Institution Admins of their institution.
+     */
+    public record UserRoleAssignedEvent(
+            UUID institutionId,
+            UUID userId,
+            String userName,
+            String roleName,
+            UUID adminId,
+            String adminName
+    ) {}
+
+    // ── Analytics & Reporting Events ──────────────────────────────────────────
+
+    /**
+     * Fired when an OEE/analytics report job completes.
+     * Constraint: ONLY the user who requested the report is notified.
+     */
+    public record OeeReportReadyEvent(
+            UUID requesterId,
+            UUID reportId,
+            String reportName
     ) {}
 }

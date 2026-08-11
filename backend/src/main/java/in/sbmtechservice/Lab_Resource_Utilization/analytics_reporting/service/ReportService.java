@@ -7,10 +7,12 @@ import in.sbmtechservice.Lab_Resource_Utilization.booking_scheduling.repository.
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.entity.Equipment;
 import in.sbmtechservice.Lab_Resource_Utilization.equipment_inventory.repository.EquipmentRepository;
 import in.sbmtechservice.Lab_Resource_Utilization.maintenance_calibration.repository.MaintenanceTaskRepository;
+import in.sbmtechservice.Lab_Resource_Utilization.notification.event.NotificationEvents;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -49,10 +51,13 @@ public class ReportService {
     private final BookingRepository bookingRepository;
     private final EquipmentRepository equipmentRepository;
     private final MaintenanceTaskRepository maintenanceTaskRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** In-memory report store. Replace with Redis in prod. */
     private final ConcurrentHashMap<UUID, ReportResult> reportStore = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, String> reportStatus = new ConcurrentHashMap<>(); // PENDING / DONE / FAILED
+    /** Maps reportId → requesterId so we can notify the right person on completion. */
+    private final ConcurrentHashMap<UUID, UUID> reportRequester = new ConcurrentHashMap<>();
 
     // ── Report Result DTO ─────────────────────────────────────────────────────
 
@@ -89,12 +94,21 @@ public class ReportService {
     /**
      * Kicks off async OEE report generation.
      * Returns a reportId immediately; the caller polls /reports/{reportId}/status.
+     * When complete, fires OeeReportReadyEvent — ONLY the requesterId receives the notification.
      */
-    public UUID initiateReport(List<UUID> equipmentIds, LocalDate from, LocalDate to) {
+    public UUID initiateReport(List<UUID> equipmentIds, LocalDate from, LocalDate to, UUID requesterId) {
         UUID reportId = UUID.randomUUID();
         reportStatus.put(reportId, "PENDING");
+        if (requesterId != null) {
+            reportRequester.put(reportId, requesterId);
+        }
         generateAsync(reportId, equipmentIds, from, to);
         return reportId;
+    }
+
+    /** Backward-compatible overload (no requester context). */
+    public UUID initiateReport(List<UUID> equipmentIds, LocalDate from, LocalDate to) {
+        return initiateReport(equipmentIds, from, to, null);
     }
 
     @Async
@@ -183,6 +197,16 @@ public class ReportService {
             reportStore.put(reportId, result);
             reportStatus.put(reportId, "DONE");
             log.info("[REPORT] Completed report {} — {} entries", reportId, entries.size());
+
+            // Notify requester (self-only) that their OEE report is ready
+            UUID requesterId = reportRequester.get(reportId);
+            if (requesterId != null) {
+                eventPublisher.publishEvent(new NotificationEvents.OeeReportReadyEvent(
+                        requesterId, reportId,
+                        "OEE Report " + from + " to " + to
+                ));
+                reportRequester.remove(reportId);
+            }
 
         } catch (Exception e) {
             log.error("[REPORT] Failed report {}: {}", reportId, e.getMessage(), e);

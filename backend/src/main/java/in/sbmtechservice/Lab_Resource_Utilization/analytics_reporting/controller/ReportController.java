@@ -1,11 +1,14 @@
 package in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.controller;
 
 import in.sbmtechservice.Lab_Resource_Utilization.analytics_reporting.service.ReportService;
+import in.sbmtechservice.Lab_Resource_Utilization.auth_user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -27,6 +30,7 @@ import java.util.UUID;
 public class ReportController {
 
     private final ReportService reportService;
+    private final UserRepository userRepository;
 
     /**
      * Initiate async OEE report generation.
@@ -37,10 +41,18 @@ public class ReportController {
     public ResponseEntity<Map<String, String>> generateReport(
             @RequestParam(required = false) List<UUID> equipmentIds,
             @RequestParam String from,
-            @RequestParam String to) {
+            @RequestParam String to,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        // Resolve the requesting user's ID so the notification fires back only to them
+        UUID requesterId = null;
+        if (userDetails != null) {
+            requesterId = userRepository.findByEmail(userDetails.getUsername())
+                    .map(u -> u.getId()).orElse(null);
+        }
 
         List<UUID> ids = equipmentIds != null ? equipmentIds : List.of();
-        UUID reportId = reportService.initiateReport(ids, LocalDate.parse(from), LocalDate.parse(to));
+        UUID reportId = reportService.initiateReport(ids, LocalDate.parse(from), LocalDate.parse(to), requesterId);
 
         return ResponseEntity.accepted()
                 .body(Map.of(
@@ -91,6 +103,19 @@ public class ReportController {
         return ResponseEntity.ok()
                 .headers(headers)
                 .body(data);
+    }
+
+    /**
+     * Retrieve the completed report result as JSON.
+     * Use this to display results in the UI after status == DONE.
+     * Does NOT trigger a new report generation.
+     */
+    @GetMapping("/{reportId}/result")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> getReportResult(@PathVariable UUID reportId) {
+        return reportService.getResult(reportId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     /**

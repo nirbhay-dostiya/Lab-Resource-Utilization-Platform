@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Shield, Key, Building, Plus, Loader2, Server, ExternalLink, Network, Tags, Settings, ChevronDown, ChevronUp, Calendar, MoreVertical, LayoutDashboard, Activity, CheckCircle, Wrench, Clock, FileText, ShoppingCart, X, Bell, Search } from 'lucide-react';
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import api from '../api/axios';
+import toast from 'react-hot-toast';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -295,7 +296,7 @@ const Dashboard = () => {
       const res = await api.post(`/reports/generate?from=${reportForm.from}&to=${reportForm.to}`);
       const rid = res.data.reportId;
       setReportId(rid);
-      // Poll every 2 seconds
+      // Poll every 2 seconds until DONE or FAILED
       reportPollRef.current = setInterval(async () => {
         try {
           const s = await api.get(`/reports/${rid}/status`);
@@ -304,8 +305,8 @@ const Dashboard = () => {
             clearInterval(reportPollRef.current);
             setIsGeneratingReport(false);
             setActiveReportTab('results');
-            // Fetch inline result for display
-            const result = await api.get(`/reports/inline?from=${reportForm.from}&to=${reportForm.to}`);
+            // Fetch the already-computed result (does NOT re-trigger generation)
+            const result = await api.get(`/reports/${rid}/result`);
             setReportResult(result.data);
           } else if (s.data.status === 'FAILED') {
             clearInterval(reportPollRef.current);
@@ -319,6 +320,7 @@ const Dashboard = () => {
       alert('Failed to start report: ' + (err.response?.data?.message || err.message));
     }
   };
+
 
   const handleSubmitWorkOrder = async () => {
     if (!workOrderForm.equipmentId || !workOrderForm.scheduledDate) {
@@ -633,21 +635,77 @@ const Dashboard = () => {
     fetchAnalyticsDetails(type, status, 0);
   };
 
-  const fetchNotifications = async () => {
-    if (user?.id) {
+  const toastedNotificationIds = useRef(new Set());
+
+  // SSE Notification Pipeline
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Initial fetch to load existing unread notifications
+    const fetchInitialNotifications = async () => {
       try {
         const res = await api.get(`/notifications/user/${user.id}/unread`);
-        setNotifications(res.data);
+        setNotifications(res.data || []);
       } catch (err) {
-        console.error("Failed to fetch notifications", err);
+        console.error("Failed to fetch initial notifications", err);
       }
-    }
-  };
+    };
+    fetchInitialNotifications();
 
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // Polling every minute
-    return () => clearInterval(interval);
+    // Establish real-time SSE connection
+    const token = localStorage.getItem('token');
+    const eventSource = new EventSource(`http://localhost:8080/api/notifications/stream/${user.id}?token=${token}`);
+
+    eventSource.addEventListener("notification", (event) => {
+      try {
+        const newNotification = JSON.parse(event.data);
+        // Use functional state update to prevent race conditions
+        setNotifications(prev => {
+          // Prevent duplicates in state
+          if (prev.find(n => n.id === newNotification.id)) return prev;
+          return [newNotification, ...prev];
+        });
+
+        // Outside of the pure updater, trigger side effects safely using a ref to deduplicate
+        if (!toastedNotificationIds.current.has(newNotification.id)) {
+          toastedNotificationIds.current.add(newNotification.id);
+          
+          setTimeout(() => {
+             toast(
+               (t) => (
+                 <div className="flex flex-col gap-1 cursor-pointer" onClick={() => toast.dismiss(t.id)}>
+                   <div className="font-semibold text-sm text-gray-800">
+                     {newNotification.actorName ? (
+                       <span>
+                         <span className="text-blue-600">{newNotification.actorName}</span>{' '}
+                         <span className="text-xs uppercase text-gray-500 tracking-wide">({newNotification.action ? newNotification.action.replace(/_/g, ' ') : newNotification.title})</span>
+                       </span>
+                     ) : (
+                       newNotification.title || newNotification.referenceType
+                     )}
+                   </div>
+                   <div className="text-xs text-gray-600 line-clamp-2">{newNotification.message || newNotification.content}</div>
+                 </div>
+               ),
+               { duration: 5000, position: 'top-right' }
+             );
+          }, 0);
+        }
+
+      } catch (err) {
+        console.error("Failed to parse incoming SSE notification", err);
+      }
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("SSE connection error", error);
+      eventSource.close();
+      // Polling fallback could be implemented here if SSE drops
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, [user]);
 
   // Close notification panel when clicking outside
@@ -1308,7 +1366,14 @@ const Dashboard = () => {
     <button onClick={() => setActiveSection('bookings')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'bookings' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
       <LayoutDashboard size={20} />
       <span>Dashboard</span>
+      {/* Live pending-approval badge */}
+      {notifications.filter(n => n.referenceType === 'BOOKING_APPROVAL_REQUEST').length > 0 && (
+        <span className="ml-auto min-w-[20px] h-5 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+          {notifications.filter(n => n.referenceType === 'BOOKING_APPROVAL_REQUEST').length}
+        </span>
+      )}
     </button>
+
     <button onClick={() => setActiveSection('profile')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium text-sm ${activeSection === 'profile' ? 'bg-white shadow-sm text-brand-orange' : 'hover:bg-black/5 hover:text-gray-900'}`}>
       <User size={20} />
       <span>Profiles</span>
@@ -1494,14 +1559,22 @@ const Dashboard = () => {
                       notifications.map(n => {
                         // Type-based icon + color
                         const typeConfig = {
-                          BOOKING:                { icon: <Calendar size={14}/>, bg: 'bg-blue-100',   text: 'text-blue-600',   label: 'Booking'     },
-                          BOOKING_APPROVAL_REQUEST:{ icon: <Clock size={14}/>,    bg: 'bg-amber-100',  text: 'text-amber-600',  label: 'Approval'    },
-                          EQUIPMENT:              { icon: <Server size={14}/>,   bg: 'bg-green-100',  text: 'text-green-600',  label: 'Equipment'   },
-                          MAINTENANCE:            { icon: <Wrench size={14}/>,   bg: 'bg-orange-100', text: 'text-orange-600', label: 'Maintenance' },
-                          INVOICE:                { icon: <FileText size={14}/>, bg: 'bg-purple-100', text: 'text-purple-600', label: 'Invoice'     },
-                          SHARING_REQUEST:        { icon: <Network size={14}/>,  bg: 'bg-teal-100',   text: 'text-teal-600',   label: 'Sharing'     },
-                          ACCESS_REQUEST:         { icon: <Key size={14}/>,      bg: 'bg-rose-100',   text: 'text-rose-600',   label: 'Access'      },
-                          WAITLIST:               { icon: <Clock size={14}/>,    bg: 'bg-slate-100',  text: 'text-slate-600',  label: 'Waitlist'    },
+                          BOOKING:                { icon: <Calendar size={14}/>, bg: 'bg-blue-100',   text: 'text-blue-600',   label: 'Booking'        },
+                          BOOKING_APPROVAL_REQUEST:{ icon: <Clock size={14}/>,    bg: 'bg-amber-100',  text: 'text-amber-600',  label: 'Approval'       },
+                          EQUIPMENT:              { icon: <Server size={14}/>,   bg: 'bg-green-100',  text: 'text-green-600',  label: 'Equipment'      },
+                          MAINTENANCE:            { icon: <Wrench size={14}/>,   bg: 'bg-orange-100', text: 'text-orange-600', label: 'Maintenance'    },
+                          INVOICE:                { icon: <FileText size={14}/>, bg: 'bg-purple-100', text: 'text-purple-600', label: 'Invoice'        },
+                          SHARING_REQUEST:        { icon: <Network size={14}/>,  bg: 'bg-teal-100',   text: 'text-teal-600',   label: 'Sharing'        },
+                          ACCESS_REQUEST:         { icon: <Key size={14}/>,      bg: 'bg-rose-100',   text: 'text-rose-600',   label: 'Access'         },
+                          WAITLIST:               { icon: <Clock size={14}/>,    bg: 'bg-slate-100',  text: 'text-slate-600',  label: 'Waitlist'       },
+                          // New types
+                          INSTITUTION:            { icon: <Building size={14}/>, bg: 'bg-indigo-100', text: 'text-indigo-600', label: 'Institution'    },
+                          DEPARTMENT:             { icon: <Network size={14}/>,  bg: 'bg-violet-100', text: 'text-violet-600', label: 'Department'     },
+                          CATEGORY:               { icon: <Tags size={14}/>,     bg: 'bg-lime-100',   text: 'text-lime-600',   label: 'Category'       },
+                          CALIBRATION:            { icon: <Activity size={14}/>, bg: 'bg-emerald-100',text: 'text-emerald-600',label: 'Calibration'    },
+                          REPORT:                 { icon: <FileText size={14}/>, bg: 'bg-sky-100',    text: 'text-sky-600',    label: 'OEE Report'     },
+                          USER_MANAGEMENT:        { icon: <User size={14}/>,     bg: 'bg-pink-100',   text: 'text-pink-600',   label: 'User'           },
+                          PROFILE:                { icon: <User size={14}/>,     bg: 'bg-gray-100',   text: 'text-gray-600',   label: 'Profile'        },
                         };
                         const cfg = typeConfig[n.referenceType] || { icon: <Bell size={14}/>, bg: 'bg-gray-100', text: 'text-gray-600', label: n.referenceType };
 
@@ -2297,7 +2370,7 @@ const Dashboard = () => {
                                     Cancel
                                   </button>
                                 ) : (
-                                  <span className="text-gray-400 text-xs">â€”</span>
+                                  <span className="text-gray-400 text-xs">—</span>
                                 )}
                               </td>
                             </tr>
@@ -2357,7 +2430,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-800 font-medium leading-tight mb-1">{b.userName} <span className="font-normal text-gray-500">requested</span> {b.equipmentName}</p>
-                      <span className="text-xs text-gray-400">{new Date(b.startTime).toLocaleDateString()} â€¢ {b.status.replace('_', ' ')}</span>
+                      <span className="text-xs text-gray-400">{new Date(b.startTime).toLocaleDateString()} • {b.status.replace('_', ' ')}</span>
                     </div>
                   </div>
                 ))}
@@ -3381,7 +3454,7 @@ const Dashboard = () => {
             </table>
           </div>
 
-          {/* â”€â”€ Module 1 Enhancement: Work Order Create Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* — Module 1 Enhancement: Work Order Create Form ———————————————— */}
           {canManage && (
             <div className="mt-10">
               <div className="flex items-center justify-between mb-4">
@@ -3508,7 +3581,7 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* â”€â”€ Module 2 Enhancement: Calibration Compliance Dashboard â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* — Module 2 Enhancement: Calibration Compliance Dashboard —————————————————— */}
           {canManage && (
             <div className="mt-10">
               <div className="flex items-center justify-between mb-4">
@@ -3547,7 +3620,7 @@ const Dashboard = () => {
                     <input type="url" value={calibrationForm.certificateUrl} onChange={e => setCalibrationForm(f => ({...f, certificateUrl: e.target.value}))}
                       placeholder="Certificate URL" className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400" />
                     <textarea value={calibrationForm.toleranceMetrics} onChange={e => setCalibrationForm(f => ({...f, toleranceMetrics: e.target.value}))}
-                      placeholder='Tolerance Metrics JSON (e.g. {"accuracy": "Â±0.02%"})'
+                      placeholder='Tolerance Metrics JSON (e.g. {"accuracy": "±0.02%"})'
                       className="border border-teal-200 rounded-xl px-4 py-2.5 bg-white text-sm focus:outline-none focus:border-teal-400 md:col-span-2" rows={2} />
                   </div>
                   <div className="flex justify-end mt-4">
@@ -3575,7 +3648,7 @@ const Dashboard = () => {
                           <div className="font-bold text-gray-800 text-sm">{item.equipmentName}</div>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badges[urgency]}`}>{urgency}</span>
                         </div>
-                        <div className="text-2xl font-black text-gray-700">{daysLeft < 999 ? daysLeft : 'â€”'}<span className="text-sm font-medium text-gray-500 ml-1">days left</span></div>
+                        <div className="text-2xl font-black text-gray-700">{daysLeft < 999 ? daysLeft : '—'}<span className="text-sm font-medium text-gray-500 ml-1">days left</span></div>
                         <div className="text-xs text-gray-500 mt-2">Expires: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'N/A'}</div>
                         <div className="text-xs text-gray-500">Vendor: {item.vendorName || 'N/A'}</div>
                         <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${item.lastResult === 'VALID' ? 'bg-green-100 text-green-700' : item.lastResult === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -3596,7 +3669,7 @@ const Dashboard = () => {
         </section>
       )}
 
-      {/* â”€â”€ Work Order Status Transition Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* — Work Order Status Transition Modal —————————————————————————————— */}
       {showTransitionModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowTransitionModal(false)}>
           <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -3625,7 +3698,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* â”€â”€ Module 5: OEE Reports Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* — Module 5: OEE Reports Section —————————————————————————————————————— */}
       {activeSection === 'reports' && (
         <section className="flex flex-col gap-6 animate-fade-in">
           {/* Tab switcher */}
@@ -3633,7 +3706,7 @@ const Dashboard = () => {
             {['generate', 'results'].map(tab => (
               <button key={tab} onClick={() => setActiveReportTab(tab)}
                 className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all capitalize ${activeReportTab === tab ? 'bg-brand-orange text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}>
-                {tab === 'generate' ? 'âš™ï¸ Generate Report' : 'ðŸ“Š Results'}
+                {tab === 'generate' ? '⚙️ Generate Report' : '📊 Results'}
               </button>
             ))}
           </div>
@@ -3673,14 +3746,46 @@ const Dashboard = () => {
 
               {reportId && reportStatus === 'DONE' && (
                 <div className="mt-5 flex gap-3">
-                  <a href={`/api/reports/${reportId}/download?format=csv`} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await api.get(`/reports/${reportId}/download?format=csv`, { responseType: 'blob' });
+                        const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `oee-report-${reportForm.from}-to-${reportForm.to}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch (err) {
+                        toast.error('CSV download failed: ' + (err.response?.data?.message || err.message));
+                      }
+                    }}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                  >
                     <FileText size={14} /> Download CSV
-                  </a>
-                  <a href={`/api/reports/${reportId}/download?format=pdf`} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await api.get(`/reports/${reportId}/download?format=pdf`, { responseType: 'blob' });
+                        const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `oee-report-${reportForm.from}-to-${reportForm.to}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch (err) {
+                        toast.error('PDF download failed: ' + (err.response?.data?.message || err.message));
+                      }
+                    }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                  >
                     <FileText size={14} /> Download PDF
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
@@ -3734,7 +3839,7 @@ const Dashboard = () => {
                     </table>
                   </div>
                   <div className="mt-4 flex gap-6 text-xs text-gray-500">
-                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-400 inline-block" /> OEE â‰¥ 65% (World-Class)</span>
+                    <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-400 inline-block" /> OEE ≥ 65% (World-Class)</span>
                     <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-400 inline-block" /> 40–64% (Average)</span>
                     <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> &lt;40% (Low)</span>
                   </div>
@@ -3754,7 +3859,7 @@ const Dashboard = () => {
       {activeSection === 'billing' && (
         <section className="flex flex-col gap-6 animate-fade-in">
 
-          {/* â”€â”€ Module 3 Enhancement: Auto-Invoice + Approval UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* — Module 3 Enhancement: Auto-Invoice + Approval UI —————————————————— */}
           {(hasRole('LAB_MANAGER') || hasRole('DEPT_HEAD') || hasRole('INSTITUTION_ADMIN')) && selectedDepartment && (
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between">
@@ -3801,7 +3906,7 @@ const Dashboard = () => {
               </div>
               {isSystemAdmin && (
                 <div className="flex items-center gap-2 text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-xl">
-                  <Shield size={14} /> Admin View â€” Payments are managed by institution members
+                  <Shield size={14} /> Admin View — Payments are managed by institution members
                 </div>
               )}
             </div>
@@ -3875,7 +3980,7 @@ const Dashboard = () => {
                     <tr key={invoice.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { setSelectedInvoiceDetails(invoice); setIsInvoiceViewOpen(true); }}>
                       <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={invoice.id}>INV-{invoice.id?.substring(0, 8).toUpperCase()}</td>
                       {isSystemAdmin && (
-                        <td className="py-4 text-gray-600 text-xs">{invoice.billedToInstitutionName || 'â€”'}</td>
+                        <td className="py-4 text-gray-600 text-xs">{invoice.billedToInstitutionName || '—'}</td>
                       )}
                       <td className="py-4 text-gray-600 text-xs">
                         {invoice.lineItems && invoice.lineItems.length > 0 ? invoice.lineItems[0].equipmentName || invoice.lineItems[0].description : invoice.bookingId}
@@ -4016,7 +4121,7 @@ const Dashboard = () => {
                         onClick={() => { setSelectedTransactionDetails(tx); setIsTransactionModalOpen(true); }}
                       >
                         <td className="py-4 font-medium text-gray-800 text-xs font-mono" title={tx?.id}>{tx?.id ? String(tx.id).substring(0, 8) : 'N/A'}...</td>
-                        <td className="py-4 text-gray-500 text-xs font-mono">{tx?.invoiceId ? 'INV-' + String(tx.invoiceId).substring(0, 8).toUpperCase() : 'â€”'}</td>
+                        <td className="py-4 text-gray-500 text-xs font-mono">{tx?.invoiceId ? 'INV-' + String(tx.invoiceId).substring(0, 8).toUpperCase() : '—'}</td>
                         <td className="py-4 text-gray-600">{tx?.transactionDate ? new Date(tx.transactionDate).toLocaleDateString() : 'N/A'}</td>
                         <td className="py-4 text-gray-600">{tx?.paymentMethod || 'N/A'}</td>
                         <td className="py-4 text-gray-600">{tx?.referenceNumber || 'N/A'}</td>
@@ -4825,7 +4930,7 @@ const Dashboard = () => {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[95vh] overflow-y-auto shadow-2xl relative animate-fade-in flex flex-col">
 
-        {/* Sticky action bar â€” hidden when printing */}
+        {/* Sticky action bar — hidden when printing */}
         <div className="sticky top-0 bg-white/90 backdrop-blur-md px-8 py-4 border-b border-slate-100 flex justify-between items-center z-10 rounded-t-3xl print:hidden">
           <div className="flex gap-3">
             <button
@@ -4851,62 +4956,159 @@ const Dashboard = () => {
   )}
 
 
-  {/* Notification View Modal */}
-  {selectedNotification && (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <Bell size={24} className="text-brand-orange" />
-            Notification Details
-          </h2>
-          <button onClick={() => setSelectedNotification(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="p-8 flex flex-col gap-6">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">{selectedNotification.title || selectedNotification.referenceType}</h3>
-            {selectedNotification.createdAt && <p className="text-sm text-gray-500 mb-4">{new Date(selectedNotification.createdAt).toLocaleString()}</p>}
-            <div className="text-gray-800 text-base leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100 whitespace-pre-wrap">
-              {selectedNotification.message || selectedNotification.content}
+  {/* ─── Notification Detail Slide-in Drawer ─────────────────────────────── */}
+  {selectedNotification && (() => {
+    const n = selectedNotification;
+
+    // Type-based config for the detail panel (same map as dropdown)
+    const detailTypeConfig = {
+      BOOKING:                { icon: <Calendar size={22}/>, bg: 'bg-blue-100',   text: 'text-blue-600',   label: 'Booking',        section: 'bookings'        },
+      BOOKING_APPROVAL_REQUEST:{ icon: <Clock size={22}/>,    bg: 'bg-amber-100',  text: 'text-amber-600',  label: 'Booking Approval',section: 'bookings'        },
+      EQUIPMENT:              { icon: <Server size={22}/>,   bg: 'bg-green-100',  text: 'text-green-600',  label: 'Equipment',      section: 'equipment'       },
+      MAINTENANCE:            { icon: <Wrench size={22}/>,   bg: 'bg-orange-100', text: 'text-orange-600', label: 'Maintenance',    section: 'maintenance'     },
+      INVOICE:                { icon: <FileText size={22}/>, bg: 'bg-purple-100', text: 'text-purple-600', label: 'Invoice',        section: 'billing'         },
+      SHARING_REQUEST:        { icon: <Network size={22}/>,  bg: 'bg-teal-100',   text: 'text-teal-600',   label: 'Sharing',        section: 'shared_resources'},
+      ACCESS_REQUEST:         { icon: <Key size={22}/>,      bg: 'bg-rose-100',   text: 'text-rose-600',   label: 'Access Request', section: 'shared_resources'},
+      WAITLIST:               { icon: <Clock size={22}/>,    bg: 'bg-slate-100',  text: 'text-slate-600',  label: 'Waitlist',       section: 'bookings'        },
+      INSTITUTION:            { icon: <Building size={22}/>, bg: 'bg-indigo-100', text: 'text-indigo-600', label: 'Institution',    section: 'institutions'    },
+      DEPARTMENT:             { icon: <Network size={22}/>,  bg: 'bg-violet-100', text: 'text-violet-600', label: 'Department',     section: 'departments'     },
+      CATEGORY:               { icon: <Tags size={22}/>,     bg: 'bg-lime-100',   text: 'text-lime-600',   label: 'Category',       section: 'categories'      },
+      CALIBRATION:            { icon: <Activity size={22}/>, bg: 'bg-emerald-100',text: 'text-emerald-600',label: 'Calibration',    section: 'maintenance'     },
+      REPORT:                 { icon: <FileText size={22}/>, bg: 'bg-sky-100',    text: 'text-sky-600',    label: 'OEE Report',     section: 'reports'         },
+      USER_MANAGEMENT:        { icon: <User size={22}/>,     bg: 'bg-pink-100',   text: 'text-pink-600',   label: 'User Management',section: 'users'           },
+      PROFILE:                { icon: <User size={22}/>,     bg: 'bg-gray-100',   text: 'text-gray-600',   label: 'My Profile',     section: 'profile'         },
+    };
+    const cfg = detailTypeConfig[n.referenceType] || {
+      icon: <Bell size={22}/>, bg: 'bg-gray-100', text: 'text-gray-600',
+      label: n.referenceType, section: null
+    };
+
+    const timeAgoFull = n.createdAt
+      ? new Date(n.createdAt).toLocaleString('en-IN', {
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        })
+      : '';
+
+    return (
+      <div
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-end"
+        onClick={(e) => { if (e.target === e.currentTarget) setSelectedNotification(null); }}
+        style={{ animation: 'notifSlideIn 0.2s ease-out' }}
+      >
+        <div className="bg-white h-full w-full max-w-md shadow-2xl flex flex-col overflow-hidden">
+          {/* Drawer Header */}
+          <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white shrink-0">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${cfg.bg} ${cfg.text}`}>
+                {cfg.icon}
+              </div>
+              <div>
+                <span className={`text-xs font-bold uppercase tracking-wide ${cfg.text}`}>{cfg.label}</span>
+                <p className="text-sm font-semibold text-gray-800 mt-0.5">Notification Details</p>
+              </div>
             </div>
+            <button
+              onClick={() => setSelectedNotification(null)}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600"
+            >
+              <X size={20} />
+            </button>
           </div>
-          <div className="flex justify-end gap-3 mt-4">
-            {selectedNotification.referenceType === 'BOOKING_APPROVAL_REQUEST' && (
-              <>
-                <button onClick={async () => {
-                  try {
-                    await api.patch(`/bookings/${selectedNotification.referenceId}/status?status=APPROVED`);
-                    alert("Purchase approved successfully.");
-                    setSelectedNotification(null);
-                  } catch (err) {
-                    alert("Failed to approve purchase.");
-                  }
-                }} className="px-6 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-full font-semibold transition-colors">
-                  Approve
-                </button>
-                <button onClick={async () => {
-                  try {
-                    await api.patch(`/bookings/${selectedNotification.referenceId}/status?status=REJECTED`);
-                    alert("Purchase rejected.");
-                    setSelectedNotification(null);
-                  } catch (err) {
-                    alert("Failed to reject purchase.");
-                  }
-                }} className="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-full font-semibold transition-colors">
-                  Reject
-                </button>
-              </>
+
+          {/* Drawer Body */}
+          <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
+            {/* Timestamp */}
+            {timeAgoFull && (
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <Clock size={12} />
+                <span>{timeAgoFull}</span>
+              </div>
             )}
-            <button onClick={() => setSelectedNotification(null)} className="px-6 py-2.5 bg-brand-orange hover:bg-orange-600 text-white rounded-full font-semibold transition-colors">
+
+            {/* Actor info */}
+            {n.actorName && (
+              <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {n.actorName.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium">Action by</p>
+                  <p className="text-sm font-semibold text-gray-800">{n.actorName}</p>
+                </div>
+                {n.action && (
+                  <span className="ml-auto text-[10px] font-bold uppercase tracking-wider bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                    {n.action.replace(/_/g, ' ')}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Message */}
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <p className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wider">Message</p>
+              <p className="text-gray-800 text-base leading-relaxed whitespace-pre-wrap">
+                {n.message || n.content}
+              </p>
+            </div>
+
+            {/* Booking Approval quick actions */}
+            {n.referenceType === 'BOOKING_APPROVAL_REQUEST' && (
+              <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-3">Quick Actions</p>
+                <div className="flex gap-3">
+                  <button onClick={async () => {
+                    try {
+                      await api.patch(`/bookings/${n.referenceId}/status?status=APPROVED`);
+                      toast.success('Booking approved successfully!');
+                      setSelectedNotification(null);
+                      fetchBookings();
+                    } catch (err) { toast.error('Failed to approve.'); }
+                  }} className="flex-1 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-full font-semibold text-sm transition-colors">
+                    ✅ Approve
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      await api.patch(`/bookings/${n.referenceId}/status?status=REJECTED`);
+                      toast.error('Booking rejected.');
+                      setSelectedNotification(null);
+                      fetchBookings();
+                    } catch (err) { toast.error('Failed to reject.'); }
+                  }} className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-full font-semibold text-sm transition-colors">
+                    ❌ Reject
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Drawer Footer */}
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center gap-3 shrink-0">
+            {cfg.section && (
+              <button
+                onClick={() => {
+                  setActiveSection(cfg.section);
+                  setSelectedNotification(null);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-orange hover:bg-orange-600 text-white rounded-full font-semibold text-sm transition-colors"
+              >
+                <Activity size={14} />
+                Go to {cfg.label}
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedNotification(null)}
+              className="px-5 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-full font-semibold text-sm transition-colors"
+            >
               Close
             </button>
           </div>
         </div>
       </div>
-    </div>
-  )}
+    );
+  })()}
+
+
 
   {isTransactionModalOpen && selectedTransactionDetails && (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-fade-in" onClick={(e) => { if (e.target === e.currentTarget) setIsTransactionModalOpen(false); }}>
