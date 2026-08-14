@@ -654,7 +654,8 @@ const Dashboard = () => {
 
     // Establish real-time SSE connection
     const token = localStorage.getItem('token');
-    const eventSource = new EventSource(`http://localhost:8080/api/notifications/stream/${user.id}?token=${token}`);
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+    const eventSource = new EventSource(`${baseUrl}/notifications/stream/${user.id}?token=${token}`);
 
     eventSource.addEventListener("notification", (event) => {
       try {
